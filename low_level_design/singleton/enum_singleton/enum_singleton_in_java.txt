@@ -1,0 +1,55 @@
+-> An enum class in Java can have multiple enum constants. Each enum constant has exactly one instance (singleton).
+
+# Example :
+public enum Direction {
+    NORTH, SOUTH, EAST, WEST;
+}
+
+- Direction.NORTH → one instance
+- Direction.SOUTH → one instance
+- Direction.EAST → one instance
+- Direction.WEST → one instance
+
+Together, the Direction enum has 4 instances total (one for each constant). But each constant is guaranteed to be
+unique and cannot be duplicated.
+
+-> If we declare an enum with only one constant:
+public enum Singleton {
+    INSTANCE;
+}
+
+Here, INSTANCE is the only constant, so this enum class has exactly one instance.
+
+
+Q : What is an Enum Singleton?
+- An Enum Singleton is a way of implementing the Singleton design pattern using an enum type. In Java using an enum
+is considered the safest and simplest way to implement a Singleton. The idea is that an enum inherently ensures that
+there is only one instance of each enum constant in the JVM, so we don’t have to worry about multiple instantiations,
+serialization issues, or reflection attacks.
+
+# Example
+public enum Singleton {
+    INSTANCE;
+
+    public void showMessage() {
+        System.out.println("Hello from Enum Singleton!");
+    }
+}
+
+class Main {
+    public static void main(String[] args) {
+        Singleton singleton = Singleton.INSTANCE;
+        singleton.showMessage();
+    }
+}
+
+-> Here,
+- Singleton.INSTANCE is the only instance
+- Java guarantees that no matter what we do (serialization, reflection, cloning) there will only ever be one INSTANCE
+
+
+Q : Why use Enum for Singleton?
+- Thread safety – enums are inherently thread-safe.
+- Serialization safety – enums provide built-in serialization handling.
+- Reflection safety – reflection cannot create another instance of an enum.
+- Simplicity – just one line, no need for double-checked locking, lazy/eager initialization etc.

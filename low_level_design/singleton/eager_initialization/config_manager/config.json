@@ -1,0 +1,6 @@
+{
+    "db_url": "postgresql://admin:secret@localhost:5432/mydatabase",
+    "debug": true,
+    "app_name": "MyProductionApp",
+    "max_connections": 20
+}

@@ -1,0 +1,50 @@
+Q : What is the Bill Pugh Singleton Pattern?
+-> The Bill Pugh Singleton Pattern is a special way of creating a Singleton object using a static inner class. It was
+introduced by Bill Pugh, a computer scientist, as a simpler and safer alternative to older methods like double-checked
+locking.
+
+# Key Ideas Behind the Pattern
+1. Singleton Goal
+- We want only one object of a class for the entire application.
+- Example: only one logger, one configuration manager, or one database connection pool.
+
+2. Lazy Initialization
+- The object is not created until it is needed (not at class load time).
+- Saves memory and startup time.
+
+3. Thread Safety
+- Multiple threads may try to get the singleton at the same time.
+- This pattern makes it safe without using synchronized or locks, because class loading in Java is thread-safe by design.
+
+
+Q : How It Works?
+- The singleton object is kept inside a static inner class.
+- The inner class is not loaded until someone calls the getInstance() method.
+- When the inner class is loaded, the JVM guarantees the instance is created only once in a thread-safe way.
+
+# Bill Pugh Singleton in Java
+public class Singleton {
+
+    // Private constructor so no one can directly create an object
+    private Singleton() {}
+
+    // Static inner class responsible for holding the instance
+    private static class Holder {
+        private static final Singleton INSTANCE = new Singleton();
+    }
+
+    // Global access point
+    public static Singleton getInstance() {
+        return Holder.INSTANCE;
+    }
+}
+
+
+# Above Code :
+1. When the Singleton class is loaded, the Holder class is not loaded immediately.
+2. When getInstance() is called the first time, the Holder class is loaded → INSTANCE is created.
+3. After that, every call to getInstance() just returns the same object.
+
+# In Java Bill Pugh Singleton uses a nested class, so it is a bit more complex to implement. Provides a perfect
+balance of lazy initialization, thread safety, and performance. Without the complexities of some other patterns
+like double-checked locking.

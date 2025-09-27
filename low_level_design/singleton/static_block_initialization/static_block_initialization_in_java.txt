@@ -1,0 +1,45 @@
+Q: What is Static Block Initialization Singleton?
+- A Static Block Initialization Singleton is a singleton pattern variant used mostly in Java. Its key idea:
+    1. The singleton instance is created eagerly, when the class is loaded.
+    2. The initialization is done inside a static block, which allows exception handling during creation.
+    3. Guarantees that only one instance exists for the entire application.
+
+
+# Java Example
+class Singleton {
+    private static Singleton instance;
+
+    // Static block to initialize the instance
+    static {
+        try {
+            instance = new Singleton();
+        } catch (Exception e) {
+            throw new RuntimeException("Exception occurred while creating singleton");
+        }
+    }
+
+    private Singleton() {
+        // Private constructor
+    }
+
+    public static Singleton getInstance() {
+        return instance;
+    }
+}
+
+
+-> Here,
+- private static Singleton instance; → holds the singleton instance.
+- static { ... } → the static block, runs once when the class is loaded.
+- instance = new Singleton(); → creates the singleton instance eagerly.
+- Exception handling → ensures any error during initialization is caught.
+- getInstance() → returns the same instance every time.
+
+
+Q: Why Use Static Block Initialization?
+- When we want eager initialization but also need exception handling during instance creation.
+For example, if the singleton needs to read a config file or connect to a database which might fail.
+
+So, Static Block Initialization Singleton is a singleton where the instance is created when the class loads,
+inside a static block that can catch initialization exceptions, ensuring only one instance exists and any
+errors are handled gracefully.

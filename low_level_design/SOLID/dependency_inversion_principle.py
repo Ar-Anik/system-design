@@ -13,7 +13,7 @@ class Animal(ABC):
     def speak(self):
         pass
 
-class Dog(Animal):  # ✅ Concrete implementation
+class Dog(Animal):  # Concrete implementation
     def speak(self):
         return "Woof!"
 """

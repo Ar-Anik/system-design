@@ -1,3 +1,0 @@
-Link : https://www.geeksforgeeks.org/system-design/dependency-injectiondi-design-pattern/
-Link : https://www.geeksforgeeks.org/python/what-is-a-pythonic-way-for-dependency-injection/?utm_source=chatgpt.com
-

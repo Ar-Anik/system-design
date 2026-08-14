@@ -1,0 +1,69 @@
+Q : Service Discovery-তে যদি প্রতিবার একটি Service অন্য একটি Service-এর Address জানার জন্য Service Registry-তে lookup/discovery/query করে, তাহলে কি প্রতিটি
+Request-এর জন্য অতিরিক্ত network call তৈরি হয় না? এতে কি overhead হয় না? যদি হয়, তাহলে বাস্তব Production System-এ এই overhead কীভাবে কমানো
+বা সমাধান করা হয়?
+-> Service Discovery-তে প্রতিটি Request-এর জন্য Service Registry-তে lookup করলে অবশ্যই অতিরিক্ত network call এবং overhead তৈরি হবে। এটি System-এর overall
+latency বাড়িয়ে দেয় এবং Registry-এর উপর অপ্রয়োজনীয় চাপ সৃষ্টি করে। এই কারণে, বাস্তব Production System-এ কখনো প্রতিটি Request-এর জন্য Service Registry-কে query
+করা হয় না। Production environment-এ এই network overhead কমানো এবং System-এর performance অপ্টিমাইজ করার জন্য বেশ কিছু Advance Architecture এবং mechanism
+ব্যবহার করা হয়
+
+1. Local Caching Mechanism
+Service Discovery-এর প্রধান সমাধান হলো Client-side Caching। কোনো Service (যেমন- Order Service) যখন অন্য কোনো Service-এর (যেমন- Payment Service) সাথে 
+communication করতে চায়, তখন পদ্ধতিটি নিম্নরূপ হয়:
+- First Request: Calling Service প্রথমবার Service Registry-তে query করে Destination Service-এর সমস্ত available IP Address এবং port-এর তালিকা সংগ্রহ করে।
+
+- Cache Storage: প্রাপ্ত তালিকাটি Calling Service তার নিজের local memory বা Cache-এ সংরক্ষণ করে।
+
+- Next Request-সমূহ: এরপর যতবার Request আসবে, Service Registry-তে আর নতুন করে query করা হবে না। সরাসরি Local Cache থেকে IP Address নিয়ে Destination Service-এ Request পাঠানো হবে।
+
+এই পদ্ধতির ফলে Service Registry সরাসরি Request-Response path থেকে সম্পূর্ণ বাইরে থাকে, যা network overhead শূন্যের কোঠায় নামিয়ে আনে।
+
+
+2. Client-Side Load Balancing
+Local Cache-এ একাধিক Service instance-এর Address সংরক্ষিত থাকে। Calling Service নিজে থেকেই একটি Load Balancing অ্যালগরিদম (যেমন- Round Robin বা Random selection) ব্যবহার করে 
+এই Address-গুলোর মধ্যে traffic বন্টন করে।
+এর ফলে প্রতিটি Request-এর জন্য centralized Load Balancer বা Registry-এর মুখাপেক্ষী হতে হয় না। এটি overall System-কে আরও দ্রুত এবং কার্যকরী করে তোলে।
+
+
+3. Cache Update এবং Refresh করার পদ্ধতি
+যেহেতু Service-এর Address Local Cache-এ থাকে, তাই নতুন Service instance Active হলে বা কোনো instance বন্ধ হয়ে গেলে Cache Update করা অত্যন্ত জরুরি। এটি সাধারণত দুটি উপায়ে করা হয়:
+
+- Time-To-Live (TTL): Cache-এ রাখা তথ্যের একটি নির্দিষ্ট মেয়াদ (TTL) নির্ধারণ করা থাকে (উদাহরণস্বরূপ, ৩০ সেকেন্ড)। এই সময় পার হওয়ার পর একটি background thread স্বয়ংক্রিয়ভাবে Service Registry
+থেকে নতুন তথ্য নিয়ে Cache Update করে। এটি মূল Request flow-কে বাধাগ্রস্ত করে না।
+
+- Event-Driven বা Watch Mechanism: অনেক আধুনিক Service Discovery টুল (যেমন- Consul, etcd, বা ZooKeeper) Notification বা Watch mechanism সাপোর্ট করে। Service Registry-তে
+কোনো পরিবর্তন হওয়া মাত্রই Registry নিজে থেকে সমস্ত Client-কে Update পাঠিয়ে দেয়, যার ফলে Client-এর Cache সাথে সাথেই Update হয়ে যায়।
+
+
+4. Stale Data এবং Retry Mechanism
+অনেক সময় Local Cache Update হওয়ার আগেই কোনো Service instance বন্ধ বা crash হতে পারে। এই অবস্থায় Client যদি Local Cache থেকে ঐ বন্ধ হয়ে যাওয়া IP-তে Request পাঠায়, তবে Request fail করবে।
+এই সমস্যা সমাধানের জন্য System-এ Retry Mechanism configure করা থাকে। প্রথম IP Address-এ Request fail করলে Client automatic-ভাবে Cache-এ থাকা দ্বিতীয় IP Address-এ Request পাঠায়। এতে
+End-user কোনো error দেখতে পান না এবং System নিরবচ্ছিন্নভাবে কাজ চালিয়ে যেতে পারে।
+
+
+5. Server-Side Service Discovery
+Microservices Architecture-এ যখন একটি Service (যেমন- Order Service) অন্য একটি Service-এর (যেমন- Payment Service) সাথে communicate করতে চায়, তখন তাকে Destination Service-এর IP Address জানতে হয়।
+Client-Side Discovery-তে Calling Service-কে নিজে Service Registry-তে গিয়ে Address খুঁজতে হয় এবং Local Cache maintain করতে হয়। কিন্তু Server-Side Service Discovery-তে Calling Service-কে এই খোঁজাখুঁজির
+দায়িত্ব নিতে হয় না। এই মডেলে Calling Service এবং Destination Service-এর মাঝখানে একটি মধ্যস্থতাকারী বা Intermediary Component বসানো হয়, যাকে সাধারণত Load Balancer বা API Gateway বলা হয়। Service খোঁজার পুরো দায়িত্ব এই
+Load Balancer পালন করে।
+
+Server-Side Service Discovery মূলত ৪টি ধাপে কাজ করে:
+- Service Registration: Destination Service (যেমন- Payment Service) active হওয়ার সময় Service Registry-তে নিজের IP Address এবং Port Register করে।
+
+- Load Balancer-এর Update: Load Balancer সরাসরি Service Registry-এর সাথে যুক্ত থাকে। Service Registry-তে নতুন কোনো Service এলে বা কোনো Service বন্ধ হয়ে গেলে Load Balancer সাথে সাথে সেই তথ্য পেয়ে যায় এবং নিজের কাছে Update রাখে।
+
+- Request পাঠানো: Calling Service (Order Service) যখন Payment Service-এর সাথে communicate করতে চায়, তখন সে Service Registry-কে কিছুই জিজ্ঞাসা করে না। সে সরাসরি একটি নির্দিষ্ট address-এ (Load Balancer-এর কাছে) Request পাঠিয়ে দেয়।
+
+- Routing এবং Load Balancing: Load Balancer Request-টি গ্রহণ করে। যেহেতু তার কাছে Payment Service-এর সব active instance-এর list রয়েছে, সে নিজে থেকে সিদ্ধান্ত নেয় কোন instance-এ Request পাঠালে সবচেয়ে ভালো হবে। এরপর সে Request-টি
+Destination Service-এ Forward করে দেয়।
+
+সাধারণ Flow:
+Order Service 
+      │ 
+      │ (১. শুধু Load Balancer-কে Request পাঠায়)
+      ▼
+Load Balancer / Proxy ── (২. Service Registry থেকে Address জানে) ── Service Registry
+      │
+      │ (৩. সঠিক Payment Instance-এ Request পাঠায়)
+      ▼
+Payment Service (Instance A / B / C)
+

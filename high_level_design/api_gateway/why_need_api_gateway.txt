@@ -1,0 +1,159 @@
+-> ধরা যাক system-এ চারটি service আছে:
+- User Service
+- Order Service
+- Payment Service
+- Inventory Service
+
+Gateway ছাড়া public Client-কে চারটি API endpoint জানতে হতে পারে:
+https://user-service.company.com
+https://order-service.company.com
+https://payment-service.company.com
+https://inventory-service.company.com
+
+এখন Client-এর architecture এমন:
+
+                    ┌──► User Service
+                    │
+Client ─────────────┼──► Order Service
+                    │
+                    ├──► Payment Service
+                    │
+                    └──► Inventory Service
+
+এখানে Client backend-এর service topology-এর সঙ্গে directly coupled।
+
+Client application-এর মধ্যে জানতে হচ্ছে:
+- User API কোথায়?
+- Order API কোথায়?
+- Payment API কোথায়?
+- Inventory API কোথায়?
+
+এটাই মূল সমস্যা। অন্যদিকে, Gateway architecture-এ Client-এর কাছে একটি public API endpoint থাকে:
+            https://api.company.com
+
+Client Request পাঠায়:
+- https://api.company.com/users/10
+- https://api.company.com/orders/101
+- https://api.company.com/payments/500
+- https://api.company.com/inventory/200
+
+Architecture:
+
+                         ┌──► User Service
+                         │
+Client ──► API Gateway ──┼──► Order Service
+                         │
+                         ├──► Payment Service
+                         │
+                         └──► Inventory Service
+
+এখানে Client শুধু জানে: api.company.com
+
+কিন্তু Gateway জানে:
+/users/*      → User Service
+/orders/*     → Order Service
+/payments/*   → Payment Service
+/inventory/*  → Inventory Service
+
+অর্থাৎ Client-এর কাছে backend service topology-এর একটি abstraction তৈরি হয়েছে।
+
+
+-> Client-এর সঙ্গে সরাসরি Microservice expose করলে,
+
+    Client
+       │
+       ├──► User Service
+       ├──► Order Service
+       ├──► Payment Service
+       └──► Inventory Service
+
+প্রতিটি service public-facing API হিসেবে expose করতে হবে। ফলে প্রতিটি service-এর সামনে আলাদা security/policy configuration প্রয়োজন হতে পারে:
+
+    User Service
+     ├── Authentication
+     ├── Rate Limiting
+     ├── CORS
+     ├── Logging
+     └── Security
+
+    Order Service
+     ├── Authentication
+     ├── Rate Limiting
+     ├── CORS
+     ├── Logging
+     └── Security
+
+    Payment Service
+     ├── Authentication
+     ├── Rate Limiting
+     ├── CORS
+     ├── Logging
+     └── Security
+
+Service সংখ্যা ২০ বা ৫০ হলে common infrastructure concern অনেক জায়গায় ছড়িয়ে যায়। Gateway architecture-এ common concern-এর একটি অংশ central layer-এ আনা যায়:
+
+                         ┌──► User Service
+                         │
+Client ──► API Gateway ──┼──► Order Service
+                         │
+                         ├──► Payment Service
+                         │
+                         └──► Inventory Service
+
+               * Gateway Provide :
+               - Authentication
+               - Rate Limiting
+               - Routing
+               - Logging
+               etc.
+
+এতে backend service-গুলো তাদের মূল business responsibility-তে বেশি focus করতে পারে।
+
+
+-> Service Topology Client-এর concern হওয়া উচিত নয়
+
+ধরা যাক আজ architecture:
+
+    /api
+       ├── User Service
+       ├── Order Service
+       ├── Payment Service
+       └── Inventory Service
+
+আগামীকাল architecture পরিবর্তন হলো:
+
+    /api
+       ├── Customer Service
+       ├── Order Service
+       ├── Billing Service
+       ├── Stock Service
+       └── Notification Service
+
+অথবা Order-related functionality দুইটি service-এ ভাগ হলো:
+
+    Order Service
+           ↓
+    1. Order Query Service
+    2. Order Command Service
+
+Client-এর জন্য যদি backend service endpoint সরাসরি public API হয়, তাহলে এই internal architecture-এর পরিবর্তন Client-এর API integration-এ impact করতে পারে।
+Gateway থাকলে:
+
+    Client
+       │
+       ▼
+    api.company.com/orders
+       │
+       ▼
+    API Gateway
+       │
+       ├──► Order Query Service
+       └──► Order Command Service
+
+Backend-এর internal topology পরিবর্তিত হলেও Gateway একই public API contract বজায় রাখতে পারে। এটাই একটি বড় কারণ।
+
+
+-> API Gateway মূলত backend-এর internal implementation এবং topology Client-এর কাছ থেকে abstract করে।
+
+-> API Gateway Client-কে backend services-এর internal topology, deployment structure এবং routing complexity থেকে decouple করে
+

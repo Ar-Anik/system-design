@@ -1,0 +1,432 @@
+Microservices Architecture-এ একটি service সাধারণত একা কাজ করে না। একটি business operation সম্পন্ন করার জন্য একটি service-কে অন্য এক বা একাধিক service-এর উপর নির্ভর করতে হয়।
+
+ধরা যাক, একটি Order Service order তৈরি করার সময় Payment Service-কে synchronous HTTP request পাঠায়।
+        Client
+           |
+           v
+      Order Service
+           |
+           | HTTP Request
+           v
+      Payment Service
+
+স্বাভাবিক অবস্থায় Payment Service দ্রুত response দিলে Order Service সেই response নিয়ে পরবর্তী কাজ সম্পন্ন করতে পারে।
+
+        Order Service
+              |
+              | Request
+              v
+        Payment Service
+              |
+              | Response
+              v
+        Order Service
+
+সমস্যা শুরু হয় যখন Payment Service unavailable হয়ে যায়, খুব slow হয়ে যায়, অথবা network-level failure তৈরি হয়। তখন Order Service বারবার Payment
+Service-কে call করতে থাকে। প্রতিটি request-এর জন্য কিছু resource ধরে রাখা হতে পারে, যেমন worker thread, connection, memory এবং request-processing capacity।
+
+যদি এই failure দীর্ঘ সময় চলতে থাকে, তাহলে Order Service-এর নিজের capacity-ও ধীরে ধীরে কমে যেতে পারে। এই ধরনের পরিস্থিতি সামলানোর জন্যই Circuit Breaker Pattern ব্যবহৃত হয়।
+
+Circuit Breaker-এর মূল উদ্দেশ্য হলো:
+একটি failing বা unavailable downstream service-এর কারণে caller service যেন অপ্রয়োজনীয়ভাবে resource consume করতে করতে নিজেও unhealthy হয়ে না যায় এবং failure
+যেন অন্য service-গুলোতে ছড়িয়ে না পড়ে। অর্থাৎ Circuit Breaker downstream failure-কে isolate করতে সাহায্য করে।
+
+এটি বিশেষভাবে তিনটি গুরুত্বপূর্ণ problem solved করে:
+1. Cascading Failure
+2. Repeated Failed Calls এবং Resource Exhaustion
+3. Slow Dependency-এর কারণে Excessive Waiting
+
+এর পাশাপাশি Circuit Breaker recovery-এর সময়ও controlled ভাবে traffic পুনরায় চালু করতে সাহায্য করে।
+
+1. Cascading Failure Prevention
+এটি Circuit Breaker-এর সবচেয়ে গুরুত্বপূর্ণ use case-গুলোর একটি। ধরা যাক একটি system-এ কয়েকটি service রয়েছে:
+
+            Order Service
+                  |
+                  v
+            Payment Service
+                  |
+                  v
+            Bank Service
+
+এখন Bank Service সমস্যায় পড়েছে। ফলে:
+
+    Payment Service
+          |
+          X
+    Bank Service
+
+Payment Service বারবার Bank Service-এর response-এর জন্য অপেক্ষা করতে পারে। এর ফলে Payment Service-এর worker, connection বা অন্যান্য processing resource
+দীর্ঘ সময় busy থাকতে পারে। একই সময়ে অনেক request এলে situation আরও খারাপ হতে পারে:
+
+        Many Requests
+              |
+              v
+        Payment Service
+              |
+              | many waiting calls
+              v
+        Bank Service
+              X
+         Unavailable
+
+এখন Payment Service নিজেও resource pressure-এর মধ্যে পড়ে যেতে পারে। তার ফলে:
+
+    Bank Service failure
+           |
+           v
+    Payment Service degradation
+           |
+           v
+    Order Service degradation
+           |
+           v
+    Other dependent services degradation
+           |
+           v
+    System-wide degradation
+
+একটি service-এর failure এভাবে dependency chain-এর মাধ্যমে অন্য service-গুলোতেও সমস্যা তৈরি করলে তাকে Cascading Failure বলা হয়।
+Circuit Breaker এই chain-টি ভাঙতে সাহায্য করে। যখন downstream failure একটি নির্দিষ্ট threshold-এর উপর চলে যায়, Circuit Breaker
+Open state-এ চলে যায়।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          X
+    Payment Service
+
+এখন নতুন request-এর জন্য প্রতিবার Payment Service-কে call করার পরিবর্তে Circuit Breaker দ্রুত failure return করতে পারে।
+ফলে failing dependency-এর উপর continuous pressure কমে যায় এবং caller service-এর resource বাঁচে।
+
+Note : Circuit Breaker পুরো system-এর cascading failure নিশ্চিতভাবে প্রতিরোধ করে না। এটি একটি নির্দিষ্ট dependency/instance-এর failure-এর
+propagation কমাতে সাহায্য করে।
+
+
+2. Repeated Failed Calls Prevent
+ধরা যাক Payment Service বর্তমানে completely unavailable।
+
+Circuit Breaker ছাড়া:
+Request 1 ───────> Payment Service ── X
+Request 2 ───────> Payment Service ── X
+Request 3 ───────> Payment Service ── X
+Request 4 ───────> Payment Service ── X
+Request 5 ───────> Payment Service ── X
+...
+Request 10000 ───> Payment Service ── X
+
+অর্থাৎ একই failing dependency-কে বারবার call করা হচ্ছে। এখানে দুটি সমস্যা হয়।
+
+- প্রথমত, প্রতিটি failed call-এর processing cost রয়েছে।
+
+- দ্বিতীয়ত, যদি failure-এর ধরন এমন হয় যেখানে response পেতে অনেক সময় লাগে, তাহলে caller-side resource দীর্ঘ সময় occupied থাকতে পারে।
+
+Circuit Breaker failure pattern detect করার পর circuit Open করে:
+
+    Request
+       |
+       v
+    Circuit Breaker
+       |
+       X
+    Payment Service
+
+
+Circuit Breaker যখন Open state-এ থাকে, তখন নতুন request Payment Service-এর কাছে পাঠানোর পরিবর্তে Circuit Breaker-এর কাছেই থেমে যায়।
+Circuit Breaker নিজেই সঙ্গে সঙ্গে failure response দিয়ে দেয়। ফলে Payment Service-এর response-এর জন্য অপেক্ষা করার প্রয়োজন হয় না এবং
+request দ্রুত fail করে। এটিই Fast Failure / Fast Fail।
+
+
+Q : Fast Failure কী?
+Fast Failure বলতে বোঝায়, known failing dependency-এর জন্য দীর্ঘ সময় অপেক্ষা না করে দ্রুত failure response দেওয়া।
+ধরা যাক Circuit Breaker Open অবস্থায় আছে। তখন:
+
+    Client
+       |
+       v
+    Order Service
+       |
+       v
+    Circuit Breaker
+       |
+       X
+    Payment Service
+
+Request Payment Service পর্যন্ত পৌঁছানোর প্রয়োজন হয় না। Circuit Breaker immediately বলতে পারে:
+    Payment Service is temporarily unavailable
+
+অথবা application-এর design অনুযায়ী fallback response দিতে পারে। ফলে request processing-এর resource দ্রুত release হতে পারে এবং caller service-এ
+অতিরিক্ত waiting request freeze হয় না।
+
+Fast Fail-এর উদ্দেশ্য হলো failure লুকানো নয়; বরং known unhealthy dependency-এর জন্য unnecessary waiting এবং repeated calls কমানো।
+
+
+3. Dealing with Slow Service Problems
+Circuit Breaker শুধু completely unavailable service-এর জন্য গুরুত্বপূর্ণ নয়। একটি downstream service technically alive থাকতে পারে, কিন্তু অত্যন্ত slow হতে পারে।
+
+ধরা যাক Normally:
+Payment Service Response = 100 ms
+
+কিন্তু কোনো সমস্যা হওয়ার পর:
+Payment Service Response = 20 seconds
+
+এখন প্রতিটি request-এর জন্য Order Service দীর্ঘ সময় অপেক্ষা করছে।
+
+অনেক request একসাথে এলে:
+Request 1 → waiting
+Request 2 → waiting
+Request 3 → waiting
+Request 4 → waiting
+Request 5 → waiting
+...
+
+এর ফলে caller-side resource exhaustion হতে পারে। Circuit Breaker-এর failure/slow-call configuration অনুযায়ী repeated slow or failed calls-এর pattern
+detect হলে circuit Open হতে পারে। তখন নতুন call downstream service-এ না পাঠিয়ে Circuit Breaker নিজেই দ্রুত failure response return করে।
+
+এখানে Circuit Breaker-এর সাথে Timeout খুব গুরুত্বপূর্ণ। বাস্তব system-এ সাধারণত:
+
+   Timeout
+       +
+   Circuit Breaker
+       +
+   Retry (carefully configured)
+
+একসাথে ব্যবহৃত হতে পারে। কারণ Circuit Breaker একাই কোনো request-এর জন্য infinite waiting বন্ধ করার mechanism নয়; Timeout নির্ধারণ করে একটি individual call
+কতক্ষণ অপেক্ষা করবে।
+
+Circuit Breaker নিজে শুধু response slow হলেই সঙ্গে সঙ্গে failure response দেয় না। ধরা যাক Payment Service সাধারণত 100 ms-এর মধ্যে response দেয়। কিন্তু কোনো সমস্যার
+কারণে response আসতে 10 seconds লাগছে।
+
+    Order Service
+         |
+         v
+    Circuit Breaker
+         |
+         v
+    Payment Service
+         |
+         | 10 seconds
+         v
+     Response
+
+এখানে Circuit Breaker-এর সাথে সাধারণত Timeout থাকে। যদি configured timeout হয় : Timeout = 3 seconds
+তাহলে,
+        Request
+           |
+           v
+        Payment Service
+           |
+           |------ 3 seconds ------|
+                                  Timeout
+                                    ↓
+                                 Failure
+
+অর্থাৎ Payment Service 3 seconds-এর মধ্যে response না দিলে Timeout-এর কারণে call fail করতে পারে। এরপর যদি এমন slow/failing call বারবার হতে থাকে এবং
+Circuit Breaker-এর configured condition পূরণ হয়, Circuit Breaker OPEN হতে পারে।
+
+    Slow calls / failed calls
+              ↓
+       Repeated pattern
+              ↓
+      Circuit Breaker OPEN
+              ↓
+        New Request
+              ↓
+        Fast Failure
+
+তখন নতুন request-এর ক্ষেত্রে :
+
+        New Request
+             |
+             v
+        Circuit Breaker
+             |
+             X
+        Payment Service
+
+
+4. Resource Exhaustion Reduce
+Circuit Breaker-এর আরেকটি গুরুত্বপূর্ণ উদ্দেশ্য হলো caller service-এর resource রক্ষা করা। ধরা যাক Order Service প্রতি request process করার জন্য একটি worker ব্যবহার করছে।
+
+Payment Service slow হয়ে গেলে:
+Worker 1 → waiting for Payment
+Worker 2 → waiting for Payment
+Worker 3 → waiting for Payment
+Worker 4 → waiting for Payment
+...
+
+এভাবে অনেক worker একই dependency-এর response-এর জন্য অপেক্ষা করলে নতুন request process করার capacity কমে যেতে পারে।
+শেষ পর্যন্ত:
+
+    Payment Service problem
+            |
+            v
+    Waiting requests increase
+            |
+            v
+    Resources become occupied
+            |
+            v
+    Order Service capacity decreases
+            |
+            v
+    Order Service becomes unhealthy
+
+
+Circuit Breaker Open হলে:
+
+    New Request
+         |
+         v
+    Circuit Breaker
+         |
+         X
+    Payment Service
+
+নতুন request-এর জন্য downstream call তৈরি হয় না। ফলে unnecessary resource consumption কমে এবং caller service নিজের available capacity ধরে রাখতে পারে।
+
+
+5. Circut Breaker State Change When Service Automatic Recover
+Circuit Breaker-এর ক্ষেত্রে Automatic Recovery বলতে বোঝায়—downstream service আবার কাজ করার অবস্থায় ফিরে এলে Circuit Breaker নিজের state পরিবর্তন করে
+controlled ভাবে সেই service-এ call পুনরায় allow করতে পারে। এখানে সবচেয়ে গুরুত্বপূর্ণ বিষয় হলো, Circuit Breaker নিজে downstream service-এর সমস্যা ঠিক করে না।
+এটি শুধু downstream service-এর failure-এর সময় call বন্ধ করে এবং service আবার কাজ করছে কি না যাচাই করার পর call পুনরায় allow করতে পারে।
+
+ধরা যাক Order Service → Payment Service-কে call করছে। স্বাভাবিক অবস্থায়:
+    Payment Service Healthy
+            |
+            v
+    Circuit CLOSED
+            |
+            v
+    Requests → Payment Service
+
+CLOSED অবস্থায় Circuit Breaker সাধারণত request-গুলো downstream service-এর দিকে যেতে দেয়। এখন কোনো কারণে Payment Service-এ সমস্যা হলো:
+    Payment Service
+           |
+           X
+       Failure / Slow
+
+এর ফলে Circuit Breaker-এর কাছে repeated failed বা configured slow calls দেখা যেতে থাকে:
+
+    Payment Service Failure
+            |
+            v
+    Repeated Failed / Slow Calls
+            |
+            v
+    Failure condition reached
+            |
+            v
+    Circuit OPEN
+
+এখন Circuit Breaker OPEN state-এ চলে যায়।
+
+    New Request
+         |
+         v
+    Circuit Breaker
+         |
+         X
+    Payment Service
+
+অর্থাৎ নতুন request-গুলো সাধারণত Payment Service-এ পাঠানো হয় না এবং দ্রুত failure return করতে পারে।
+এভাবে কিছু সময় downstream service-এর উপর নতুন call পাঠানো বন্ধ থাকে।
+
+OPEN অবস্থায় configured waiting period শেষ হলে Circuit Breaker HALF-OPEN state-এ যেতে পারে।
+
+    Circuit OPEN
+         |
+         | configured waiting period
+         v
+    Circuit HALF-OPEN
+
+HALF-OPEN state-এর উদ্দেশ্য হলো, Payment Service আবার কাজ করছে কি না controlled ভাবে পরীক্ষা করা।
+এখন Circuit Breaker limited test call allow করতে পারে:
+
+    Circuit HALF-OPEN
+            |
+            | Test Call
+            v
+    Payment Service
+
+এখন দুটি সম্ভাবনা রয়েছে। Test Call সফল হলে
+
+    Payment Service
+           |
+           | Success
+           v
+    Circuit HALF-OPEN
+           |
+           v
+    Circuit CLOSED
+
+Circuit আবার CLOSED হলে normal calls পুনরায় allow করা যেতে পারে
+
+    Order Service
+          |
+          v
+    Circuit CLOSED
+          |
+          v
+    Payment Service
+
+অর্থাৎ normal traffic আবার চলতে শুরু করে।
+
+Test Call আবার fail হলে, যদি HALF-OPEN অবস্থায় test call আবার fail করে:
+
+    Circuit HALF-OPEN
+           |
+           | Failure
+           v
+    Circuit OPEN
+
+তখন Circuit আবার OPEN হয়ে যায়। অর্থাৎ নতুন calls আবার block/fast-fail হতে থাকে।
+
+পুরো Automatic Recovery Process
+
+    Payment Service Healthy
+            |
+            v
+    Circuit CLOSED
+            |
+            v
+    Normal Calls
+            |
+            v
+    Payment Service Fails
+            |
+            v
+    Repeated Failed / Slow Calls
+            |
+            v
+    Configured Failure Condition Reached
+            |
+            v
+    Circuit OPEN
+            |
+            v
+    New Calls Fail Fast
+            |
+            v
+    Configured Waiting Period
+            |
+            v
+    Circuit HALF-OPEN
+            |
+            v
+    Limited Test Call
+            |
+            +----------------------+
+            |                      |
+          Success                Failure
+            |                      |
+            v                      v
+    Circuit CLOSED            Circuit OPEN
+            |                      |
+            v                      v
+    Normal Calls              New Calls
+    Resume                    Fail Fast
+
+

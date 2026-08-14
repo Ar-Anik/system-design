@@ -1,0 +1,480 @@
+একটি E-commerce system-এর Order Service এবং Payment Service দিয়ে পুরো flow ব্যাখ্যা করা যাক।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          v
+    Payment Service
+
+এখানে Order Service Payment Service-কে call করছে এবং Circuit Breaker Order Service ও Payment Service-এর মাঝখানে অবস্থান করছে।
+
+1. Initial State — Circuit Closed
+Application শুরু হলে Circuit Breaker সাধারণত CLOSED State-এ থাকে।
+
+    Circuit State = CLOSED
+
+CLOSED State-এর অর্থ হলো Circuit Breaker বর্তমানে downstream service-এ request যেতে দিচ্ছে।
+
+    Order Service
+          |
+          | Payment Request
+          v
+    Circuit Breaker
+          |
+          | Allow
+          v
+    Payment Service
+
+এখানে Circuit Breaker request block করছে না। তবে এর অর্থ এই নয় যে Circuit Breaker কোনো কাজ করছে না।
+
+Circuit Breaker request-এর execution observe করে এবং result অনুযায়ী failure/success record করতে পারে।
+অর্থাৎ Closed State-এ Circuit Breaker-এর দুটি গুরুত্বপূর্ণ কাজ হচ্ছে:
+
+    Request Allow করা
+           +
+    Request-এর Outcome Monitor করা
+
+
+2. Order Service একটি Request পাঠায়
+ধরা যাক Order Service একটি payment operation-এর জন্য request পাঠাল।
+
+    Order Service
+          |
+          | POST /payment
+          v
+    Circuit Breaker
+
+Circuit Breaker প্রথমে নিজের current State দেখে। Current State = CLOSED, যেহেতু State CLOSED, তাই request downstream Payment Service-এর কাছে forward করা হয়।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          | Forward
+          v
+    Payment Service
+
+এখন actual network communication শুরু হয়।
+
+
+3. Payment Service Request Process করে
+Payment Service request receive করে এবং payment operation process করে। এখানে মূলত দুই ধরনের outcome হতে পারে: Success অথবা Failure
+
+Failure-এর উদাহরণ হতে পারে:
+- Connection failure
+- Timeout
+- HTTP 5xx
+- Service unavailable
+- Network-related failure
+
+তবে কোন outcome Circuit Breaker-এর failure হিসেবে count হবে সেটি implementation এবং configuration-এর উপর নির্ভর করে।
+
+
+4. Success হলে কী হয়?
+ধরা যাক Payment Service successfully response দিল।
+
+    Payment Service
+          |
+          | Success
+          v
+    Circuit Breaker
+          |
+          v
+    Order Service
+
+Circuit Breaker এই execution-কে successful outcome হিসেবে record করতে পারে। যেহেতু failure condition trigger হয়নি:
+
+    CLOSED
+       |
+       | Success
+       v
+    CLOSED
+
+Circuit Closed-ই থাকে। পরবর্তী request-ও একইভাবে downstream service-এ যেতে পারে।
+
+Request 1 → Success
+Request 2 → Success
+Request 3 → Success
+Request 4 → Success
+
+
+5. Failure হলে কী হয়?
+এখন ধরা যাক Payment Service request process করতে পারল না।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          v
+    Payment Service
+          |
+          X
+        Failure
+
+Circuit Breaker failure outcome observe করে। এরপর configured failure-tracking mechanism অনুযায়ী এই failure record করা হতে পারে।
+
+উদাহরণ:
+Request 1 → Success
+Request 2 → Success
+Request 3 → Failure
+Request 4 → Failure
+Request 5 → Success
+Request 6 → Failure
+
+Circuit Breaker এই outcome-গুলো track করে। এখানে গুরুত্বপূর্ণ বিষয় হলো:
+একটি failure হলেই সাধারণভাবে Circuit সঙ্গে সঙ্গে Open হয়ে যায় না। Circuit Breaker-এর configured rule অনুযায়ী failure condition evaluate করা হয়।
+
+
+6. Failure Condition Evaluate করা
+Circuit Breaker implementation অনুযায়ী failure evaluate করার পদ্ধতি আলাদা হতে পারে। একটি common approach হলো failure rate। ধরা যাক configuration:
+
+Minimum Requests = 10
+Failure Rate Threshold = 50%
+
+এখন recent 10 টি request-এর result:
+Success
+Failure
+Failure
+Success
+Failure
+Failure
+Success
+Failure
+Failure
+Success
+
+এখানে:
+Total Requests = 10
+Failures = 6
+Failure rate: 6 / 10 = 60%
+Configured threshold: 50%
+
+তাই configured condition অনুযায়ী Circuit Open হওয়ার জন্য eligible হতে পারে।
+
+এখানে একটি গুরুত্বপূর্ণ বিষয়: সব Circuit Breaker failure rate ব্যবহার করে না।
+
+Implementation অনুযায়ী:
+- Failure Count
+- Failure Rate
+- Consecutive Failures
+- Sliding Window
+- Time-based Window
+ইত্যাদি mechanism ব্যবহার হতে পারে। তাই 50% হলেই Circuit Open কোনো universal rule নয়।
+
+
+7. Failure Threshold Reach করলে Circuit Open হয়
+যখন configured failure condition Circuit Open করার জন্য trigger করে, তখন State পরিবর্তিত হয়:
+
+    CLOSED
+       |
+       | Failure condition triggered
+       v
+     OPEN
+
+এটি Circuit Breaker-এর সবচেয়ে গুরুত্বপূর্ণ transition। এখন Circuit Breaker আর normal traffic downstream service-এ পাঠাবে না।
+
+
+8. Open State-এ কী হয়?
+Circuit State এখন OPEN, এখন নতুন request Order Service থেকে এলো।
+
+    Order Service
+          |
+          | New Request
+          v
+    Circuit Breaker
+
+Circuit Breaker প্রথমে State check করবে, State = OPEN, Open State-এর অর্থ হলো: Do NOT execute a new downstream call.
+তাই Payment Service-এ request পাঠানো হবে না।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          X
+    Payment Service
+
+এখানে Circuit Breaker request-টিকে fail-fast করতে পারে। অর্থাৎ downstream service-এর response-এর জন্য নতুন করে network call বা দীর্ঘ waiting করা হয় না।
+
+
+9. Open State-এ কেন Request Block করা হয়?
+ধরা যাক Payment Service বর্তমানে unhealthy। Circuit Breaker Open না হলে:
+
+    Request
+       |
+       v
+    Payment Service
+       X
+    Timeout
+
+তারপর আবার:
+
+    Request
+       |
+       v
+    Payment Service
+       X
+    Timeout
+
+এভাবে repeated request তৈরি হতে পারে। এর ফলে upstream service-এর resources যেমন:
+- Threads
+- Connections
+- Workers
+- Request slots
+
+অপ্রয়োজনীয়ভাবে occupied হতে পারে। অন্যদিকে Circuit Breaker Open করলে:
+
+    Request
+       |
+       v
+    Circuit Breaker
+       |
+       X
+    Payment Service
+
+নতুন request downstream service-এ পাঠানো হয় না। এটি downstream failure-এর propagation এবং resource pressure কমাতে সাহায্য করে।
+
+
+10. Open State-এ Circuit চিরকাল থাকে না।
+Circuit Breaker Open হওয়ার পর একটি configured waiting duration থাকতে পারে। উদাহরণ: Open Duration = 30 seconds
+এই সময়ের মধ্যে Circuit Open থাকে এবং নতুন request সাধারণত downstream service-এ পাঠানো হয় না। Conceptually:
+
+    CLOSED
+       |
+       v
+    OPEN
+       |
+       | Wait
+       |
+       | 30 seconds
+       v
+    Recovery Test
+
+এই waiting period-এর উদ্দেশ্য হলো downstream service-কে recovery করার সুযোগ দেওয়া এবং সঙ্গে সঙ্গে repeated requests পাঠিয়ে আবার failure তৈরি না করা।
+
+
+11. Wait Duration End
+Configured waiting duration শেষ হলে Circuit Breaker recovery পরীক্ষা করার জন্য HALF-OPEN State-এ যেতে পারে।
+
+     OPEN
+      |
+      | Wait duration elapsed
+      v
+    HALF-OPEN
+
+Half-Open State-কে একটি controlled recovery-testing state হিসেবে বোঝা সবচেয়ে সঠিক। Circuit Breaker এখানে ধরে নেয় না যে Payment Service অবশ্যই
+healthy হয়েছে। বরং controlled ভাবে পরীক্ষা করে:
+        Payment Service কি আবার request process করতে পারছে?
+
+
+12. Half-Open State-এ Normal Traffic সঙ্গে সঙ্গে চালু হয় না
+Half-Open মানে, সব request আবার allow এমন নয়। বরং implementation-এর configuration অনুযায়ী limited trial request allow করা হতে পারে।
+Conceptually:
+
+    HALF-OPEN
+        |
+        | Limited Trial
+        v
+    Payment Service
+
+ধরা যাক একটি trial request allow করা হলো।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          | One/More Trial Request
+          v
+    Payment Service
+
+এখন Payment Service-এর outcome observe করা হবে।
+
+
+13. Half-Open Trial Request Successful হলে
+ধরা যাক Payment Service recovery করেছে এবং trial request successfully process করেছে।
+
+    Payment Service
+          |
+          | Success
+          v
+    Circuit Breaker
+
+Circuit Breaker তখন recovery condition অনুযায়ী আবার normal traffic allow করতে পারে। State transition:
+
+    HALF-OPEN
+        |
+        | Successful recovery test
+        v
+    CLOSED
+
+এরপর normal request আবার downstream service-এ যেতে পারে।
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          v
+    Payment Service
+
+অর্থাৎ Circuit আবার normal operation-এ ফিরে যায়।
+
+
+14. Half-Open Trial Request Failure হলে
+এখন অন্য scenario, Circuit Half-Open হয়েছে। Trial request Payment Service-এ পাঠানো হলো। কিন্তু Payment Service আবার failure দিল।
+
+    HALF-OPEN
+         |
+         | Trial failed
+         v
+       OPEN
+
+Circuit আবার Open হয়ে যায়।
+
+    OPEN
+      |
+      | Wait
+      v
+  HALF-OPEN
+      |
+      | Failure
+      v
+    OPEN
+
+তারপর আবার configured waiting duration-এর পরে recovery test করা হতে পারে।
+
+
+14. Full Work Flow
+
+                  +----------------+
+                  |     CLOSED     |
+                  +----------------+
+                          |
+                          | Request
+                          v
+                   Execute Request
+                          |
+                 +--------+--------+
+                 |                 |
+              Success           Failure
+                 |                 |
+                 |          Record Failure
+                 |                 |
+                 |          Failure condition?
+                 |                 |
+                 |            +----+----+
+                 |            |         |
+                 |           No        Yes
+                 |            |         |
+                 |            |         v
+                 |            |      +------+
+                 |            +------| OPEN |
+                 |                   +------+
+                 |                      |
+                 |                      | Wait
+                 |                      v
+                 |                +-----------+
+                 |                | HALF-OPEN |
+                 |                +-----------+
+                 |                   |       |
+                 |                Success  Failure
+                 |                   |       |
+                 |                   v       v
+                 +---------------- CLOSED   OPEN
+
+এটাই Circuit Breaker-এর complete lifecycle।
+
+
+
+** Note :
+Circuit Open হওয়ার সময় কিছু request ইতিমধ্যে downstream service-এর দিকে in-flight থাকতে পারে। উদাহরণ:
+
+Request A ───────────────> Payment Service
+Request B ───────────────> Payment Service
+Request C ───────────────> Payment Service
+
+                Circuit becomes OPEN
+
+Circuit Open হওয়া মানেই Request A, B, C automatically cancel হয়ে যাবে—এমন নয়। Circuit Open মূলত নতুন request execution-এর admission control করে।
+Already-running request-এর outcome timeout, cancellation এবং underlying client/implementation-এর behavior-এর উপর নির্ভর করতে পারে।
+
+
+Q : ধরা যাক, Circuit Breaker HALF-OPEN State-এ আছে এবং configured limited testing request হলো 5টি। এই 5টি trial request-এর মধ্যে 3 টি Success এবং
+2 টি Failure হয়েছে। তাহলে Circuit Breaker-এর State কি CLOSED হবে, নাকি OPEN হবে?
+
+-> শুধু 3 টি Success এবং 2 টি Failure হয়েছে—এই তথ্যের ভিত্তিতে নিশ্চিতভাবে বলা যায় না যে Circuit CLOSED হবে নাকি OPEN হবে। কারণ HALF-OPEN State-এ কতটি trial
+request সফল হলে CLOSED হবে এবং কতটি failure হলে আবার OPEN হবে—এটি Circuit Breaker implementation এবং configuration-এর উপর নির্ভর করে। অর্থাৎ:
+
+    HALF-OPEN
+        |
+        | 5 টি Trial Request
+        |
+        +---- 3 Success
+        |
+        +---- 2 Failure
+
+এখান থেকে শুধু বলা যায়:
+Success = 3
+Failure = 2
+
+কিন্তু State transition জানতে হলে জানতে হবে Circuit Breaker-এর Half-Open success/failure policy কী।
+
+-> Example-1 — সব 5 টি Trial Request সফল হওয়া required
+
+ধরা যাক configuration এমন:
+Trial Requests = 5
+Required Successes = 5
+
+তাহলে:
+3 Success
+2 Failure
+হওয়ায় recovery test successful ধরা হবে না। ফলে:
+
+    HALF-OPEN
+         |
+         | Recovery test failed
+         v
+      OPEN
+
+
+-> Example-2 — নির্দিষ্ট Success Rate required
+
+ধরা যাক configuration এমন:
+Trial Requests = 5
+Required Success Rate = 60%
+
+এখানে:
+Success = 3
+Total = 5
+
+Success Rate = 3/5 * 100 = 60%
+
+তাহলে configured condition অনুযায়ী recovery test successful হতে পারে:
+
+    HALF-OPEN
+         |
+         | 60% Success
+         v
+     CLOSED
+
+
+-> Example-3 — Failure threshold-এর ভিত্তিতে সিদ্ধান্ত
+
+ধরা যাক configuration এমন:
+Trial Requests = 5
+Failure Threshold = 50%
+
+এখানে:
+Failure = 2
+Total = 5
+
+Failure Rate = 2/5 * 100 = 40%
+
+যদি configured rule হয়, Failure rate 50% বা তার বেশি হলে আবার OPEN তাহলে 40% failure হওয়ায় সেই condition trigger করবে না।
+ফলে implementation-এর অন্য recovery rules অনুযায়ী Circuit CLOSED হতে পারে।
+

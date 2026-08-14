@@ -1,0 +1,108 @@
+Q : What is API Composition?
+-> Microservices architecture-এ API Composition হলো এমন একটি pattern, যেখানে API Gateway একাধিক independent backend service
+থেকে ডেটা সংগ্রহ করে, সেগুলোকে একত্রে মিলিয়ে একটিমাত্র response-এর মাধ্যমে Client-এর কাছে return করে।
+
+Client-এর কাঙ্ক্ষিত ডেটা যদি একটিমাত্র service-এ না থেকে একাধিক service-এ ছড়িয়ে থাকে, তখন Client-কে একাধিকবার আলাদা call করার প্রয়োজন হয় না।
+API Gateway নিজেই ঐ service-গুলোর কাছে ডেটা জন্য request পাঠায়। এরপর প্রাপ্ত ডেটাগুলোকে একত্রিত করে Client-এর কাছে response পাঠায়।
+
+            একটি Client Request → একাধিক backend service call → একাধিক result → একটি combined response
+
+ধরা যাক একটি e-commerce application-এর একটি page-এ নিচের information দেখাতে হবে:
+
+Order Summary
+────────────────────────────
+1.
+Customer: Rahim Khan
+Address: Dhaka
+
+2. Orders:
+Order #101
+Order #102
+Order #103
+
+3. Payment:
+Paid
+
+
+এই তিন ধরনের information তিনটি আলাদা Microservice-এ থাকতে পারে:
+
+    User Service
+        │
+        └── Customer Name
+            Address
+
+
+    Order Service
+        │
+        └── Orders
+
+
+    Payment Service
+        │
+        └── Payment Status
+
+অর্থাৎ Client-এর প্রয়োজনীয় একটি screen-এর data একটি service-এর মধ্যে নেই। এখন Client যদি সরাসরি প্রতিটি service-এর সঙ্গে যোগাযোগ করে, তাহলে Client-কে multiple API call করতে হবে।
+API Composition-এর উদ্দেশ্য হলো এই multiple backend data source-কে একটি composed API response হিসেবে উপস্থাপন করা।
+
+
+-> সাধারণত যেকোনো software বা ব্যাকএন্ড ডেভেলপমেন্টের ক্ষেত্রে একটি URL সরাসরি একটি নির্দিষ্ট view বা ফাংশনকে নির্দেশ করে। এটিই সাধারণ নিয়ম। তাহলে
+API Gateway কীভাবে বোঝে যে একটি URL-এর জন্য ভিন্ন ভিন্ন ডেটা প্রয়োজন? এটি নিজে থেকে হয় না। ডেভেলপাররা API Gateway-এর ভেতরে এই নিয়মগুলো
+স্পষ্টভাবে define করে দেন। মূলত Gateway-এর ভেতরে একটি route বা map তৈরি করা থাকে।
+
+1. Configuration File বা Route Map:
+API Gateway-এর ভেতরে একটি configuration ফাইল (যেমন: YAML বা JSON format) থাকে। এই ফাইলে নির্দিষ্ট URL-এর জন্য একটি sequence লেখা
+থাকে। উদাহরণস্বরূপ, configuration ফাইলে ঠিক এভাবে define করা থাকে:
+    "যখন Client /api/order-summary/ URL-এ একটি call পাঠাবে, তখন নিচের ৩টি internal call execute করতে হবে:
+        1. User Service-এর Address-এ call করে ডেটা আনতে হবে।
+        2. Order Service-এর Address-এ call করে ডেটা আনতে হবে।
+        3. Payment Service-এর Address-এ call করে ডেটা আনতে হবে।
+
+এরপর ৩টি ডেটা একসাথে মিলিয়ে Client-কে return করতে হবে।" যেহেতু Gateway-এর ভেতরে এই map এবং নিয়মগুলো আগে থেকেই define করা থাকে, তাই Gateway খুব সহজেই তার দায়িত্ব পালন করতে পারে।
+
+2. Gateway-এর নিজস্ব Coding (Backend for Frontend Pattern):
+অনেক সময় API Gateway-এর ভেতরে API Composition-এর জন্য ছোট ছোট ফাংশন বা স্ক্রিপ্ট লেখা হয় (যেমন: AWS API Gateway-তে Lambda ফাংশন বা Kong Gateway-তে plagin)।
+এই ক্ষেত্রে /api/order-summary/ request-টি internal কোনো Order Service-এ যায় না। URL-টি সরাসরি Gateway-এর নিজস্ব ফাংশনকে নির্দেশ করে।
+
+Gateway-এর সেই ফাংশনের ভেতরে নিচের মতো coding করা থাকে:
+
+# API Gateway-এর ভেতরের ফাংশন
+user_data = call(User_Service_Address)
+order_data = call(Order_Service_Address)
+payment_data = call(Payment_Service_Address)
+
+combined_format = {
+    "user": user_data,
+    "orders": order_data,
+    "payment": payment_data
+}
+return combined_format
+
+
+-> Api Composition Network Latency কমায়, একটি ই-কমার্স অ্যাপের "Order Summary" page load করার কথা বিবেচনা করা যেতে পারে। এই পেজে 3 টি data দেখানো প্রয়োজন:
+1. Customer Name এবং Address (এটি User Service-এ সংরক্ষিত থাকে)।
+2. Order List (এটি Order Service-এ থাকে)।
+3. Payment Status (এটি Payment Service-এ থাকে)।
+
+# API Composition ছাড়া অবস্থা (উচ্চ Latency):
+যদি API Gateway না থাকে, তবে Client-কে ইন্টারনেটের মাধ্যমে ৩টি আলাদা call করতে হবে।
+    1. প্রথমে User Service-এ call করতে হবে।
+    2. এরপর Order Service-এ call করতে হবে।
+    3. সবশেষে Payment Service-এ call করতে হবে।
+
+ইন্টারনেটের মাধ্যমে প্রতিটি request যাওয়া এবং response ফিরে আসতে কিছু সময় লাগে, যাকে Network Latency বলা হয়। ৩টি আলাদা request পাঠালে অনেক বেশি সময়
+নষ্ট হয়। এর ফলে ব্যবহারকারীর কাছে পেজটি slow মনে হয়। এছাড়া Client-এর coding অনেক কঠিন হয়ে যায়।
+
+API Composition ব্যবহার করে (Gateway-এর মাধ্যমে):
+1. একটিমাত্র Request পাঠানো: Client ইন্টারনেটের মাধ্যমে API Gateway-তে শুধুমাত্র একটি request পাঠায় (যেমন: /api/order-summary)।
+
+2. Internal Communication: API Gateway request-টি গ্রহণ করার পর, এটি internal Private নেটওয়ার্ক ব্যবহার করে একই সাথে User Service, Order Service এবং Payment Service-এর কাছে আলাদা আলাদা request পাঠায়।
+
+3. Data Collection ও Composition: backend service-গুলো তাদের কাজ execute করে API Gateway-কে ফলাফল return করে। API Gateway তখন এই তিনটি ভিন্ন ডেটাকে একত্রিত করে একটি নির্দিষ্ট format-এ সাজায়।
+
+4. Client-কে Response Back: সবশেষে API Gateway সেই সম্পূর্ণ ডেটাটি একটিমাত্র response হিসেবে Client-এর কাছে পাঠিয়ে দেয়।
+
+
+এখানে Client এবং API Gateway-এর মধ্যে ইন্টারনেটের মাধ্যমে মাত্র ১ বার যোগাযোগ হয়েছে। API Gateway এবং backend service-গুলোর মধ্যকার যোগাযোগ
+একটি Private এবং অত্যন্ত উচ্চ গতির নেটওয়ার্কের ভেতরে ঘটে। তাই ভেতরের যোগাযোগে প্রায় কোনো delay হয় না। ফলে ৩ বার slow ইন্টারনেট ব্যবহার করার বদলে
+মাত্র ১ বার ব্যবহার করতে হয়, যা পুরো system-কে অত্যন্ত fast করে তোলে।
+

@@ -169,6 +169,7 @@ class ImageEditor:
             group.add(component)
             self.all_graphics.remove(component)
 
+        group.move(10, 10)
         self.all_graphics.add(group)
         print('Grouping Completed. Rendering Update:')
         self.all_graphics.draw()
@@ -187,6 +188,8 @@ if __name__ == '__main__':
     editor.all_graphics.add(d1)
     editor.all_graphics.add(c1)
 
+    d2.move(3, 3)
+    c2.move(1, 1)
     editor.group_selected([d2, c2])
 
 

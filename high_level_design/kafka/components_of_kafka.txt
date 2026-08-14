@@ -1,0 +1,340 @@
+১. Topic
+Topic কী?
+
+Topic হলো Kafka-এর একটি Logical Category বা Logical Channel, যেখানে একই ধরনের Event বা Message সংরক্ষণ করা হয়।
+
+সহজভাবে বলা যায়, Producer যখন Kafka-তে কোনো Message পাঠায়, তখন সেটি অবশ্যই একটি নির্দিষ্ট Topic-এ পাঠাতে হয়। একইভাবে Consumer-ও নির্দিষ্ট Topic থেকেই Message পড়ে।
+
+Topic নিজে কোনো Physical Storage নয়। এটি কেবল একটি Logical Container। বাস্তবে Topic-এর Data বিভিন্ন Partition-এ সংরক্ষিত থাকে।
+
+Database-এর Table-এর সাথে Topic-কে তুলনা করা যায়, কারণ Table যেমন একই ধরনের Data ধারণ করে, Topic-ও একই ধরনের Event ধারণ করে।
+
+উদাহরণ
+
+একটি E-commerce System কল্পনা করা যাক।
+
+সেখানে বিভিন্ন ধরনের Event তৈরি হতে পারে।
+
+Order Created
+Payment Completed
+Product Added
+Inventory Updated
+Email Sent
+
+এখন প্রতিটি Event আলাদা Topic-এ রাখা যেতে পারে।
+
+order-events
+payment-events
+inventory-events
+email-events
+
+যখন Order Service নতুন Order তৈরি করবে, তখন সেটি order-events Topic-এ Event Publish করবে।
+
+Payment Service Payment Complete হলে payment-events Topic-এ Event Publish করবে।
+
+Inventory Service Stock Update হলে inventory-events Topic-এ Event Publish করবে।
+
+অন্যদিকে Consumer প্রয়োজন অনুযায়ী নির্দিষ্ট Topic Subscribe করে শুধুমাত্র সেই Topic-এর Event পড়বে।
+
+Topic-এর বৈশিষ্ট্য
+Topic একটি Logical ধারণা।
+Producer সবসময় Topic-এ Message Publish করে।
+Consumer সবসময় Topic থেকেই Message Consume করে।
+একটি Topic-এর Data বাস্তবে এক বা একাধিক Partition-এ সংরক্ষিত থাকে।
+একই Cluster-এ অসংখ্য Topic থাকতে পারে।
+২. Partition
+Partition কী?
+
+Kafka-এর সবচেয়ে গুরুত্বপূর্ণ Component হলো Partition।
+
+একটি Topic-এর সমস্ত Data একটি জায়গায় সংরক্ষণ না করে Kafka সেটিকে একাধিক Partition-এ ভাগ করে।
+
+অর্থাৎ,
+
+একটি Topic → অনেকগুলো Partition।
+
+প্রতিটি Partition একটি Ordered, Immutable, Append-only Log File।
+
+এর অর্থ হলো—
+
+Message সবসময় শেষে (End of Log)-এ Append হয়।
+পুরনো Message পরিবর্তন (Update) করা যায় না।
+মাঝখান থেকে Message Insert করা যায় না।
+Message Delete করাও Consumer-এর মাধ্যমে হয় না; Kafka-এর Retention Policy অনুযায়ী নির্দিষ্ট সময় বা Size অতিক্রম করলে Kafka নিজেই পুরনো Message মুছে ফেলে।
+Partition কেন প্রয়োজন?
+
+যদি একটি Topic-এ প্রতিদিন কোটি কোটি Event আসে, তাহলে সব Data একটি Log-এ সংরক্ষণ করলে—
+
+Write Bottleneck তৈরি হবে।
+Read Bottleneck তৈরি হবে।
+Parallel Processing সম্ভব হবে না।
+একটি Broker-এর উপর অতিরিক্ত Load পড়বে।
+
+এই সমস্যাগুলো সমাধানের জন্য Topic-কে একাধিক Partition-এ ভাগ করা হয়।
+
+Partition-এর সুবিধা
+১. Scalability
+
+একটি Topic-এর বিভিন্ন Partition বিভিন্ন Broker-এ রাখা যায়।
+
+ফলে Storage এবং Load অনেক Broker-এর মধ্যে ভাগ হয়ে যায়।
+
+২. Parallel Processing
+
+একাধিক Partition থাকলে Consumer Group-এর বিভিন্ন Consumer একই সময়ে ভিন্ন ভিন্ন Partition থেকে Data পড়তে পারে।
+
+ফলে Processing Speed অনেক বেড়ে যায়।
+
+৩. High Throughput
+
+Producer-ও একাধিক Partition-এ একই সময়ে Data লিখতে পারে।
+
+ফলে Write Performance উল্লেখযোগ্যভাবে বৃদ্ধি পায়।
+
+গুরুত্বপূর্ণ বিষয়
+
+Kafka কেবল একটি Partition-এর ভিতরে Message Order Guarantee করে।
+
+অর্থাৎ একই Partition-এর Message সবসময় যেই ক্রমে লেখা হয়েছে, সেই ক্রমেই পড়া হবে।
+
+কিন্তু ভিন্ন Partition-এর Message-এর মধ্যে Global Order Guarantee থাকে না।
+
+এটি Kafka-এর একটি অত্যন্ত গুরুত্বপূর্ণ বৈশিষ্ট্য।
+
+৩. Offset
+Offset কী?
+
+একটি Partition-এর প্রতিটি Message-এর একটি Unique Sequential Number থাকে, যাকে Offset বলা হয়।
+
+Offset হলো সেই Partition-এর মধ্যে Message-এর অবস্থান (Position) নির্দেশকারী একটি সংখ্যা।
+
+Offset শুধুমাত্র একটি Partition-এর জন্য Unique।
+
+অন্য Partition-এ একই Offset Number আবার থাকতে পারে।
+
+উদাহরণ
+
+Partition-0
+
+Offset 0
+Offset 1
+Offset 2
+Offset 3
+Offset 4
+
+Partition-1
+
+Offset 0
+Offset 1
+Offset 2
+
+এখানে দেখা যাচ্ছে—
+
+দুইটি Partition-এই Offset 0 রয়েছে।
+
+কারণ Offset Global নয়।
+
+Offset শুধুমাত্র নিজের Partition-এর মধ্যে Unique।
+
+Offset-এর কাজ
+
+Consumer কোন Message পর্যন্ত পড়েছে, সেটি Track করার জন্য Offset ব্যবহার করা হয়।
+
+ধরা যাক,
+
+Consumer Offset 450 পর্যন্ত Message পড়েছে।
+
+পরবর্তীতে Consumer আবার চালু হলে Offset 451 থেকে পড়া শুরু করতে পারে।
+
+এই কারণেই Kafka Consumer চাইলে পুনরায় আগের Message-ও পড়তে পারে।
+
+গুরুত্বপূর্ণ বিষয়
+Offset কখনও পরিবর্তন হয় না।
+Offset কখনও Reorder হয় না।
+Offset Message-এর Position নির্দেশ করে।
+Offset-এর মাধ্যমে Consumer নিজের Reading Progress Track করে।
+৪. Producer
+Producer কী?
+
+Producer হলো সেই Application বা Service, যা Kafka Topic-এ Event বা Message Publish (Write) করে।
+
+Producer Kafka-এর Client হিসেবে Broker-এর কাছে Message পাঠায়।
+
+Broker Message গ্রহণ করে Disk-এ সংরক্ষণ করে।
+
+Producer-এর দায়িত্ব
+
+Producer-এর প্রধান দায়িত্বগুলো হলো—
+
+Topic নির্বাচন করা।
+Message তৈরি করা।
+Broker-এ Message পাঠানো।
+কোন Partition-এ Message যাবে তা নির্ধারণ করা (যদি Partition Explicitly উল্লেখ না করা হয়, তাহলে Kafka Producer-এর Partitioner Key বা Partitioning Strategy অনুযায়ী Partition নির্বাচন করে)।
+Broker থেকে Acknowledgement (ACK) গ্রহণ করা।
+Producer কীভাবে Partition নির্বাচন করে?
+
+Producer কয়েকভাবে Partition নির্বাচন করতে পারে।
+
+১. Explicit Partition
+
+Producer নিজেই Partition Number নির্ধারণ করতে পারে।
+
+উদাহরণ
+
+Partition-2
+২. Message Key ব্যবহার করে
+
+Producer যদি একটি Key প্রদান করে, তাহলে Kafka সেই Key-এর Hash গণনা করে Partition নির্বাচন করে।
+
+একই Key সবসময় একই Partition-এ যায়।
+
+এটি অত্যন্ত গুরুত্বপূর্ণ, কারণ একই Entity-এর Event-এর Order বজায় থাকে।
+
+উদাহরণ
+
+Customer-101
+
+এই Customer-এর সব Event একই Partition-এ যাবে।
+
+৩. Key না থাকলে
+
+যদি কোনো Key প্রদান করা না হয়, তাহলে Kafka Producer সাধারণত উপলব্ধ Partition-গুলোর মধ্যে Message বিতরণ করে, যাতে Load তুলনামূলকভাবে ভারসাম্যপূর্ণ থাকে। Kafka-এর নির্দিষ্ট Partition নির্বাচন কৌশল (Partitioner Implementation) Kafka Client-এর Version অনুযায়ী পরিবর্তিত হতে পারে।
+
+৫. Consumer
+Consumer কী?
+
+Consumer হলো সেই Application বা Service, যা Kafka Topic থেকে Event বা Message পড়ে (Consume করে) এবং প্রয়োজনীয় Business Logic সম্পাদন করে।
+
+Kafka-এর দায়িত্ব শুধুমাত্র Message সংরক্ষণ ও সরবরাহ করা।
+
+Message পড়ে কী কাজ করা হবে, সেটি সম্পূর্ণ Consumer Application-এর দায়িত্ব।
+
+Consumer-এর দায়িত্ব
+Topic Subscribe করা।
+Broker থেকে Message Fetch করা।
+Message Process করা।
+Offset Track করা।
+প্রয়োজন অনুযায়ী Offset Commit করা।
+গুরুত্বপূর্ণ বিষয়
+
+Consumer Message Delete করে না।
+
+Kafka Message Retention Policy অনুযায়ী নির্দিষ্ট সময় বা Size পর্যন্ত Message সংরক্ষণ করে।
+
+ফলে একই Message পরবর্তীতেও আবার পড়া সম্ভব।
+
+৬. Consumer Group
+Consumer Group কী?
+
+একাধিক Consumer যখন একই Group ID ব্যবহার করে একসাথে কাজ করে, তখন সেটিকে Consumer Group বলা হয়।
+
+Consumer Group-এর প্রধান উদ্দেশ্য হলো—
+
+Load ভাগ করা।
+Parallel Processing করা।
+একই Data বারবার Process হওয়া রোধ করা।
+Consumer Group কীভাবে কাজ করে?
+
+ধরা যাক,
+
+একটি Topic-এ ৪টি Partition রয়েছে।
+
+P0
+P1
+P2
+P3
+
+একটি Consumer Group-এ ২টি Consumer আছে।
+
+Consumer-A
+Consumer-B
+
+Kafka Partition Assignment করে।
+
+Consumer-A
+
+P0
+P2
+
+Consumer-B
+
+P1
+P3
+
+এখন দুইজন Consumer একই সময়ে Parallelভাবে Data Process করতে পারবে।
+
+সবচেয়ে গুরুত্বপূর্ণ নিয়ম
+
+একই Consumer Group-এর মধ্যে একটি নির্দিষ্ট Partition একই সময়ে শুধুমাত্র একজন Consumer-এর কাছেই Assign করা হয়।
+
+অর্থাৎ—
+
+একটি Partition কখনও একই সময়ে একই Consumer Group-এর দুইটি Consumer দ্বারা একসাথে পড়া হয় না।
+এর ফলে একই Message একই Consumer Group-এর মধ্যে একাধিকবার সমান্তরালভাবে Process হওয়ার ঝুঁকি থাকে না।
+
+তবে ভিন্ন Consumer Group হলে একই Partition-এর একই Message স্বাধীনভাবে পড়া সম্ভব।
+
+৭. Broker
+Broker কী?
+
+Kafka Cluster-এর প্রতিটি Server বা Node-কে Broker বলা হয়।
+
+অর্থাৎ Kafka আসলে একাধিক Broker নিয়ে একটি Cluster গঠন করে।
+
+Broker-এর দায়িত্ব
+
+Broker Kafka-এর মূল Storage এবং Communication Server হিসেবে কাজ করে।
+
+এর প্রধান দায়িত্বগুলো হলো—
+
+Producer থেকে Message গ্রহণ করা।
+Message Disk-এ Persist (Durably Store) করা।
+Topic ও Partition-এর Data সংরক্ষণ করা।
+Consumer-এর Fetch Request-এর জবাবে Message সরবরাহ করা।
+Cluster-এর অন্যান্য Broker-এর সাথে সমন্বয় করে Partition Replication (যদি কনফিগার করা থাকে) পরিচালনায় অংশগ্রহণ করা।
+গুরুত্বপূর্ণ বিষয়
+
+একটি Kafka Cluster-এ সাধারণত একাধিক Broker থাকে।
+
+Partition-গুলো বিভিন্ন Broker-এর মধ্যে বিতরণ করা যায়।
+
+এর ফলে—
+
+Storage Scale করা যায়।
+Load Balance করা যায়।
+Fault Tolerance বৃদ্ধি পায় (Replication ব্যবহৃত হলে)।
+৮. ZooKeeper / KRaft
+ZooKeeper কী?
+
+Kafka-এর প্রাথমিক Version-গুলোতে Cluster Management-এর জন্য ZooKeeper ব্যবহার করা হতো।
+
+ZooKeeper-এর কাজ ছিল—
+
+Cluster Metadata সংরক্ষণ করা।
+Broker Registration পরিচালনা করা।
+Controller নির্বাচন করা।
+Leader Election-এ সহায়তা করা।
+Cluster State সমন্বয় করা।
+
+তবে ZooKeeper কখনও Kafka Message সংরক্ষণ করত না। Message সবসময় Broker-এর Disk-এই সংরক্ষিত হয়।
+
+KRaft (Kafka Raft) কী?
+
+Kafka-এর নতুন Architecture-এ ZooKeeper-এর পরিবর্তে KRaft (Kafka Raft Metadata Mode) ব্যবহার করা হয়।
+
+KRaft হলো Kafka-এর নিজস্ব Consensus Mechanism, যা Raft Algorithm-এর উপর ভিত্তি করে তৈরি।
+
+এতে Kafka নিজেই Cluster Metadata পরিচালনা করতে পারে এবং আলাদা ZooKeeper Cluster-এর প্রয়োজন হয় না।
+
+KRaft কেন আনা হয়েছে?
+
+ZooKeeper ব্যবহারের কিছু সীমাবদ্ধতা ছিল।
+
+যেমন—
+
+আলাদা ZooKeeper Cluster পরিচালনা করতে হতো।
+Deployment জটিল ছিল।
+Maintenance Cost বেশি ছিল।
+Operational Complexity বৃদ্ধি পেত।
+
+এই সমস্যাগুলো সমাধানের জন্য Kafka-তে KRaft যুক্ত করা হয়েছে।

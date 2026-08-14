@@ -1,0 +1,57 @@
+Q : Service Discovery কী?
+-> Microservices Architecture-এ একটি application-কে অনেকগুলো ছোট এবং independently deployable service-এ ভাগ করা হয়। যেমন একটি E-commerce system-এ থাকতে পারে:
+- Order Service
+- Payment Service
+- Inventory Service
+- Notification Service
+
+প্রতিটি service সাধারণত আলাদা process/container/VM-এ run করে। ফলে একটি service যখন অন্য service-এর সাথে communication করতে চায়, তখন
+network-এর মাধ্যমে destination service-এ পৌঁছাতে হয়। এখানেই একটি fundamental সমস্যা তৈরি হয়:
+        Order Service কীভাবে জানবে Payment Service বর্তমানে কোথায় চলছে?
+
+ধরা যাক Payment Service-এর একটি instance বর্তমানে: 10.0.1.25:8002
+
+এখানে:
+10.0.1.25 → IP Address
+8002      → Port
+
+Order Service সরাসরি এই Address ব্যবহার করে request পাঠাতে পারে। কিন্তু production Microservices environment-এ Payment Service-এর মাত্র একটি
+instance থাকা সাধারণত বাস্তবসম্মত নয়। ধরা যাক Payment Service-এর তিনটি instance চলছে:
+
+Payment Instance 1 → 10.0.1.25:8002
+Payment Instance 2 → 10.0.1.26:8002
+Payment Instance 3 → 10.0.1.27:8002
+
+আবার deployment-এর সময় কোনো instance বন্ধ হয়ে যেতে পারে, নতুন instance তৈরি হতে পারে, container restart হতে পারে, IP পরিবর্তিত হতে পারে।
+তখন Order Service-এর জন্য hard-coded IP address ব্যবহার করা সমস্যাজনক। এই dynamic environment-এ Service Discovery ব্যবহৃত হয়।
+
+
+-> Definition : Service Discovery হলো Microservices environment-এ একটি service-এর বর্তমান available instance-গুলোর network location
+dynamically discover করার প্রক্রিয়া।
+
+অর্থাৎ কোনো service অন্য একটি service-এর সাথে communication করার সময় destination service-এর বর্তমানে available instance কোথায় রয়েছে,
+সেই information dynamically পাওয়ার ব্যবস্থা হলো Service Discovery। এখানে একটি গুরুত্বপূর্ণ বিষয় হলো:
+
+Service Discovery সাধারণত শুধু একটি IP address খুঁজে দেয় না; একটি logical service-এর জন্য বর্তমানে available এক বা একাধিক service instance-এর network location discover করতে সাহায্য করে।
+
+যেমন:
+
+Payment Service
+      │
+      ├── 10.0.1.25:8002
+      ├── 10.0.1.26:8002
+      └── 10.0.1.27:8002
+
+Order Service-এর প্রয়োজন:
+
+"Payment Service কোথায়?"
+
+Service Discovery system উত্তর দিতে পারে:
+
+Payment Service-এর available instances:
+
+10.0.1.25:8002
+10.0.1.26:8002
+10.0.1.27:8002
+
+এরপর communication mechanism-এর উপর নির্ভর করে একটি instance নির্বাচন করে request পাঠানো হয়।

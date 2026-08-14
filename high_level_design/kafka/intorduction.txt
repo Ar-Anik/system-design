@@ -1,0 +1,55 @@
+Apache Kafka হলো একটি open-source, distributed event streaming platform, যা প্রাথমিকভাবে LinkedIn দ্বারা ডেভেলপ করা হয়েছিল এবং পরবর্তীতে Apache Software Foundation-এর অধীনে পরিচালিত হচ্ছে।
+
+Kafka-কে কেবলমাত্র একটি message queue (যেমন- RabbitMQ বা ActiveMQ) হিসেবে বিবেচনা করলে ভুল হবে। মূলত, Kafka হলো একটি Distributed, Append-Only Commit Log।
+এটি real-time data pipeline তৈরি, high-throughput streaming system এবং data integration-এর জন্য ব্যবহৃত হয়। Kafka data-কে memory-তে না রেখে সরাসরি
+disk-এ write করে এবং cluster জুড়ে replicate করে, যা একে অত্যন্ত robust করে তোলে।
+
+
+Q : কেন Kafka-কে Distributed Event Streaming Platform বলা হয়?
+Apache Kafka-কে Distributed Event Streaming Platform বলা হয়, কারণ Kafka শুধুমাত্র একটি Server বা Computer-এর উপর নির্ভর করে কাজ করে না। বরং Kafka
+একাধিক Server (Broker) নিয়ে একটি Cluster তৈরি করে, যেখানে সব Server একসাথে কাজ করে একটি বড় Streaming System হিসেবে।
+
+Kafka-তে Producer যখন কোনো Event (Message) পাঠায়, তখন সেই Event শুধুমাত্র একটি Server-এ সংরক্ষণ হয় না। Event-গুলো বিভিন্ন Broker-এর মধ্যে Partition
+আকারে ভাগ হয়ে সংরক্ষিত হয় এবং প্রয়োজন হলে Replication-এর মাধ্যমে একাধিক Broker-এ কপি রাখা হয়। এর ফলে কোনো একটি Broker নষ্ট হয়ে গেলেও অন্য Broker থেকে
+Data পাওয়া যায় এবং System সচল থাকে।
+
+Kafka-তে Event-গুলো একটানা (Continuously) Producer থেকে গ্রহণ করা হয় এবং Consumer-দের কাছে Real-time বা Near Real-time-এ পৌঁছে দেওয়া হয়। অর্থাৎ
+Event Create হওয়া থেকে শুরু করে Event Process হওয়া পর্যন্ত Kafka একটি ধারাবাহিক (Continuous) Streaming Pipeline হিসেবে কাজ করে।
+
+এই Architecture-এর কারণে Kafka একই সময়ে লক্ষ লক্ষ Event Handle করতে পারে, Load বিভিন্ন Broker-এর মধ্যে ভাগ করে নিতে পারে (Load Distribution), এবং
+কোনো একটি Server Failure হলেও পুরো System বন্ধ হয়ে যায় না (High Availability ও Fault Tolerance নিশ্চিত হয়)।
+
+এই কারণেই Kafka-কে Distributed Event Streaming Platform বলা হয়।
+
+
+Distributed → Kafka একাধিক Broker (Server) নিয়ে Cluster হিসেবে কাজ করে।
+Event → Kafka Data-কে Event (Message/Record) হিসেবে সংরক্ষণ করে।
+Streaming → Event-গুলো ধারাবাহিকভাবে (Continuously) Producer থেকে Consumer-এর কাছে প্রবাহিত হয়।
+Platform → Kafka শুধু Message Store করে না; Event গ্রহণ, সংরক্ষণ, বিতরণ এবং Stream Processing-এর জন্য একটি সম্পূর্ণ Platform প্রদান করে।
+
+
+Q : কেন Kafka-কে Append-Only Commit Log বলা হয়?
+
+Kafka-কে Append-Only Commit Log বলা হয়, কারণ Kafka প্রতিটি Partition-কে একটি ধারাবাহিক (Sequential) Log File হিসেবে সংরক্ষণ করে এবং
+নতুন Event সবসময় Log-এর একেবারে শেষে (End of the Log) যোগ (Append) করে।
+
+Producer যখন নতুন Event পাঠায়, Kafka তখন আগে থেকে থাকা Event-গুলোর মাঝখানে কোনো পরিবর্তন করে না, কোনো Event-এর অবস্থান পরিবর্তন করে না
+এবং নতুন Event-কে পুরোনো Event-এর মাঝে Insert-ও করে না। প্রতিটি নতুন Event শুধুমাত্র Log-এর শেষে যুক্ত হয়। এই বৈশিষ্ট্যকে Append-Only বলা হয়।
+
+Kafka প্রতিটি Event-কে একটি ধারাবাহিক Offset Number দেয় (যেমন 0, 1, 2, 3, ...), যা সেই Partition-এর মধ্যে Event-এর স্থায়ী (Stable) অবস্থান
+নির্দেশ করে। Offset একবার কোনো Event-এর জন্য নির্ধারণ হলে সেই Event Log-এ থাকা অবস্থায় Offset আর পরিবর্তিত হয় না।
+
+এটিকে Commit Log বলা হয়, কারণ Kafka Event-গুলোকে এমন একটি স্থায়ী Log হিসেবে সংরক্ষণ করে যেখানে প্রতিটি Event লিখে (Committed) রাখা হয় এবং পরে
+Consumer নিজের Offset অনুযায়ী সেই Event-গুলো পড়ে। Kafka কোনো Event Consumer পড়েছে কি না তার ভিত্তিতে Event সঙ্গে সঙ্গে মুছে ফেলে না। Event
+Log-এ নির্দিষ্ট Retention Policy (সময় বা আকার) অনুযায়ী সংরক্ষিত থাকে।
+
+এই Design-এর ফলে Kafka খুব দ্রুত Sequential Disk Write করতে পারে, একই Data একাধিক Consumer স্বাধীনভাবে পড়তে পারে, Consumer নিজের Offset
+থেকে পুনরায় Data পড়তে পারে (Replay), এবং Event-এর ক্রম (Ordering) একই Partition-এর মধ্যে বজায় থাকে।
+
+এই কারণেই Kafka-কে Append-Only Commit Log বলা হয়।
+
+Append-Only → নতুন Event সবসময় Log-এর শেষে যোগ হয়; মাঝখানে Insert বা Reorder করা হয় না।
+Commit → Event স্থায়ীভাবে Log-এ লেখা (Committed) হয়।
+Log → Partition একটি ধারাবাহিক (Sequential) Record-এর তালিকা, যেখানে প্রতিটি Record-এর নিজস্ব Offset থাকে।
+
+

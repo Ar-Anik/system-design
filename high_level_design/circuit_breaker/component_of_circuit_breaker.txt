@@ -1,0 +1,468 @@
+Circuit Breaker হলো এমন একটি fault-tolerance mechanism, যা কোনো downstream service বারবার failure, timeout বা unavailable অবস্থায় থাকলে সেই service-এর
+দিকে নতুন request পাঠানো সাময়িকভাবে বন্ধ করে দেয়। এর ফলে failure অন্য service-গুলোর উপর ছড়িয়ে পড়ে cascading failure তৈরি করার সম্ভাবনা কমে।
+
+একটি Circuit Breaker-এর কাজকে কয়েকটি প্রধান component দিয়ে বোঝানো যায়।
+
+1. State Machine
+State Machine হলো Circuit Breaker-এর সবচেয়ে গুরুত্বপূর্ণ component। এটি নির্ধারণ করে Circuit Breaker বর্তমানে কোন অবস্থায় আছে এবং সেই অবস্থায় request-এর সাথে কী আচরণ করা হবে।
+
+সাধারণ Circuit Breaker-এ তিনটি প্রধান State থাকে:
+
+        +-------------+
+        |   CLOSED    |
+        +-------------+
+              |
+              v
+        +-------------+
+        |    OPEN     |
+        +-------------+
+              |
+       Wait / Sleep Window
+              |
+              v
+        +-------------+
+        |  HALF-OPEN  |
+        +-------------+
+              |
+       +------+------+
+       |             |
+   Success        Failure
+       |             |
+       v             v
+    CLOSED         OPEN
+
+
+
+2. Failure Detection / Failure Counting
+Circuit Breaker-কে জানতে হবে downstream call সফল হয়েছে নাকি failure হয়েছে। এজন্য Circuit Breaker request-এর result observe করে।
+
+যেমন:
+Request 1 → Success
+Request 2 → Success
+Request 3 → Timeout
+Request 4 → Failure
+Request 5 → Failure
+
+Circuit Breaker এই failure-গুলো track করতে পারে। Failure বলতে implementation অনুযায়ী বিভিন্ন ধরনের ঘটনা বোঝাতে পারে, যেমন:
+- Connection failure
+- Network error
+- Timeout
+- নির্দিষ্ট HTTP 5xx response
+- অন্য configured exception
+
+তবে প্রতিটি error-কে Circuit Breaker failure হিসেবে Count করা উচিত নয়। উদাহরণ: HTTP 400 Bad Request
+এটি সাধারণত downstream service-এর availability failure নয়। তাই অনেক implementation-এ এমন application/client error
+Circuit Breaker failure হিসেবে Count করা হয় না।
+
+কোন failure count হবে তা Circuit Breaker-এর configuration এবং library/framework-এর behavior-এর উপর নির্ভর করে।
+
+
+3. Failure Threshold
+নির্ধারণ করে কতটা failure হলে Circuit Breaker CLOSED → OPEN হবে। Threshold বিভিন্নভাবে configure করা যেতে পারে।
+
+- Count-Based Threshold
+এখানে একটি নির্দিষ্ট সংখ্যক failure হলে Circuit OPEN হতে পারে। যেমন:
+        Failure Threshold = 5 failures
+
+এর অর্থ, নির্ধারিত monitoring window-এর মধ্যে 5 টি failure হলে Circuit OPEN হতে পারে।
+
+ধরা যাক:
+Rolling Time Window = 60 seconds
+Failure Threshold   = 5 failures
+
+তাহলে অর্থ হবে, সর্বশেষ 60 seconds-এর মধ্যে 5 টি request failure হলে Circuit OPEN হতে পারে।
+
+Example:
+12:00:05 → Failure
+12:00:15 → Failure
+12:00:27 → Failure
+12:00:41 → Failure
+12:00:52 → Failure
+
+এখানে 60 seconds-এর window-এর মধ্যে 5টি failure হয়েছে।
+
+    5 failures
+         ↓
+    Threshold reached
+         ↓
+    CLOSED → OPEN
+
+এখানে 60 seconds হলো measurement window, আর 5 failures হলো Failure Threshold।
+
+
+- Percentage-Based Threshold
+এখানে failure-এর সংখ্যা সরাসরি নির্ধারণ না করে মোট request-এর মধ্যে কত শতাংশ failure হলে Circuit OPEN হবে, সেটি নির্ধারণ করা হয়।
+যেমন : Failure Threshold = 50%
+
+কিন্তু এটিও একা যথেষ্ট নয়। জানতে হবে: কোন request-এর মধ্যে 50% failure হিসাব করা হবে?
+
+ধরা যাক:
+Rolling Time Window = 60 seconds
+Failure Threshold   = 50%
+Minimum Requests    = 10
+
+অর্থাৎ, সর্বশেষ 60 seconds-এর মধ্যে পর্যাপ্ত request থাকা অবস্থায় failure rate 50% বা তার বেশি হলে Circuit OPEN হতে পারে।
+
+ধরা যাক শেষ 60 seconds-এ:
+Total Requests = 20
+Failed         = 12
+Successful     = 8
+
+তাহলে:
+    Failure Rate = 12 / 20 × 100
+                 = 60%
+
+যেহেতু, 60% ≥ 50% তাই configured rules অনুযায়ী CLOSED → OPEN হতে পারে।
+
+
+Circuit Breaker একটি design pattern, তাই সব implementation একই threshold mechanism ব্যবহার করে না।
+Implementation অনুযায়ী বিভিন্ন ধরনের failure condition ব্যবহার হতে পারে:
+- Failure Count → নির্দিষ্ট সংখ্যক failure
+- Failure Rate → নির্দিষ্ট percentage failure
+- Consecutive Failures → পর পর নির্দিষ্ট সংখ্যক failure
+
+এগুলোর সাথে আবার measurement-এর জন্য ব্যবহার হতে পারে:
+- Time-Based Window → যেমন Last 60 seconds
+- Count-Based Window → যেমন Last 20 requests
+
+
+4. Request Timeout
+Request Timeout হলো একটি downstream request-এর response পাওয়ার জন্য সর্বোচ্চ কতক্ষণ অপেক্ষা করা হবে, সেই নির্ধারিত সময়।
+
+ধরা যাক, Request Timeout = 2 seconds
+
+এখন Order Service থেকে Payment Service-এ একটি request পাঠানো হলো:
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          v
+    Payment Service
+          |
+          |---- wait up to 2 seconds ----|
+                                         X
+                                      Timeout
+
+যদি Payment Service 2 seconds-এর মধ্যে response না দেয়, তাহলে request timeout হতে পারে।
+
+Q : Timeout হলে কী হয়?
+-> Timeout ঘটলে calling side আর অনির্দিষ্ট সময় ধরে response-এর জন্য অপেক্ষা করে না। যেমন:
+    t = 0s
+    Request sent
+        |
+        |
+        | waiting
+        |
+    t = 2s
+        |
+        v
+    No response
+        |
+        v
+    Request Timeout
+
+এই timeout-এর result Circuit Breaker-এর কাছে failure হিসেবে Count করা হতে পারে, যদি Circuit Breaker-এর configuration-এ timeout-কে failure হিসেবে বিবেচনা করা হয়।
+তারপর:
+
+    Request Timeout
+          |
+          v
+    Failure recorded
+          |
+          v
+    Failure statistics
+          |
+          v
+    Failure Threshold reached?
+          |
+         YES
+          |
+          v
+    CLOSED → OPEN
+
+Timeout এবং Circuit Breaker একই জিনিস নয় এখানে সবচেয়ে গুরুত্বপূর্ণ বিষয় হলো, Request Timeout এবং Circuit Breaker দুটি আলাদা concept।
+
+Request Timeout-এর Question : “একটি request-এর response-এর জন্য সর্বোচ্চ কতক্ষণ অপেক্ষা করা হবে?”
+যেমন: Timeout = 2 seconds
+
+Circuit Breaker-এর Question : “Downstream service বারবার failure করলে নতুন request পাঠানো সাময়িকভাবে বন্ধ করা হবে কি না?”
+যেমন: Failure Threshold = 5 failures
+
+Timeout management implementation এবং architecture-এর উপর নির্ভর করে। অনেক ক্ষেত্রে timeout আলাদা HTTP client বা RPC client-এর মাধ্যমে পরিচালিত হয়।
+যেমন:
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          v
+    HTTP Client
+          |
+          | Timeout = 2 seconds
+          v
+    Payment Service
+
+এখানে HTTP client request-এর timeout পরিচালনা করছে। যদি Payment Service 2 seconds-এর মধ্যে response না দেয়:
+
+    Payment Service
+          |
+          X
+       Timeout
+          |
+          v
+    HTTP Client
+          |
+          v
+    Circuit Breaker
+          |
+          v
+    Failure recorded
+
+Circuit Breaker তখন timeout result-টি observe করে এবং configured rules অনুযায়ী failure statistics-এ সেটি Count করতে পারে।
+
+
+5. Open-State Duration / Sleep Window
+Circuit OPEN হওয়ার পর Circuit Breaker অনির্দিষ্ট সময় OPEN অবস্থায় থাকবে না—সাধারণত recovery পরীক্ষা করার জন্য একটি নির্দিষ্ট সময় অপেক্ষা করা হয়।
+
+এই সময়টিকে বিভিন্ন library-তে বিভিন্ন নামে পাওয়া যায়:
+Sleep Window
+Open State Duration
+Wait Duration
+Reset Timeout
+Recovery Timeout
+
+উদাহরণ:
+Open State Duration = 30 seconds
+
+Flow:
+    Failure Threshold reached
+              |
+              v
+           OPEN
+              |
+              | 30 seconds
+              v
+         HALF-OPEN
+
+এই সময়ের মধ্যে নতুন call fail-fast হতে পারে।
+
+
+6. Half-Open Probe/Trial Request Control
+Circuit HALF-OPEN হওয়ার পরে সবচেয়ে গুরুত্বপূর্ণ বিষয় হলো:
+        কতগুলো request recovery test হিসেবে downstream service-এর কাছে যেতে পারবে?
+
+একটি simple implementation-এ:
+
+    HALF-OPEN
+        |
+        v
+    1 trial request
+
+আবার অন্য implementation-এ সীমিত সংখ্যক request allow করা যেতে পারে। যেমন:
+
+    HALF-OPEN
+
+    Request 1 → allowed
+    Request 2 → allowed
+    Request 3 → allowed
+
+এর result দেখে Circuit Breaker সিদ্ধান্ত নেয়:
+
+    Success
+       |
+       v
+    CLOSED
+
+অথবা:
+
+    Failure
+       |
+       v
+    OPEN
+
+তাই Half-Open state-এর probe/trial request control একটি গুরুত্বপূর্ণ অংশ।
+
+
+7. Success Criteria
+Recovery হয়েছে কি না সেটি নির্ধারণ করার জন্য Circuit Breaker-এর একটি success criterion থাকতে পারে।
+
+যেমন Half-Open অবস্থায়:
+
+    Probe Request
+          |
+          v
+       Success
+          |
+          v
+    Circuit CLOSED
+
+কিন্তু কিছু implementation-এ একটি মাত্র successful request যথেষ্ট নাও হতে পারে। যেমন:
+
+    Required successful probes = 3
+
+    Probe 1 → Success
+    Probe 2 → Success
+    Probe 3 → Success
+                 |
+                 v
+               CLOSED
+
+অর্থাৎ recovery decision কীভাবে হবে সেটিও implementation/configuration-dependent।
+
+
+8. Sliding Window / Metrics
+Circuit Breaker-কে failure rate বা success rate হিসাব করার জন্য recent request-এর statistics রাখতে হতে পারে।
+
+এজন্য অনেক Circuit Breaker implementation time-based window বা count-based window ব্যবহার করে। উদাহরণ:
+
+    Last 10 requests
+
+    Success
+    Success
+    Failure
+    Failure
+    Success
+    Failure
+    Failure
+    Failure
+    Success
+    Failure
+
+এখান থেকে failure rate হিসাব করা হতে পারে।
+
+অথবা: Last 10 seconds
+
+এর মধ্যে হওয়া request-এর statistics ব্যবহার করা হতে পারে।
+
+এই mechanism বিশেষভাবে গুরুত্বপূর্ণ যখন threshold failure percentage/rate দিয়ে configure করা হয়। like :
+
+Rolling Time Window = 60 seconds
+Failure Threshold   = 50%
+Minimum Requests    = 10
+
+
+9. Fast-Fail Behavior
+Circuit OPEN হওয়ার পর নতুন request downstream service-এর দিকে পাঠানো না হয়ে দ্রুত failure return করতে পারে। এটিই Fail Fast behavior।
+
+    Client
+       |
+       v
+    Circuit Breaker
+       |
+       X
+       |
+    Fast Failure
+
+উদাহরণ:
+
+     Circuit OPEN
+          |
+          v
+      Request
+          |
+          v
+    Immediate Failure
+
+এর উদ্দেশ্য হলো unavailable downstream service-এর response-এর জন্য বারবার অপেক্ষা না করা।
+
+এটি বিশেষভাবে গুরুত্বপূর্ণ যখন downstream service slow বা unavailable হওয়ার কারণে thread, connection বা worker দীর্ঘ সময় আটকে থাকার সম্ভাবনা থাকে।
+
+
+10. Fallback / Alternative Response
+কিছু Circuit Breaker system-এ OPEN হলে Fallback ব্যবহার করা যায়। যেমন:
+
+    Order Service
+          |
+          v
+    Circuit Breaker
+          |
+          X
+    Payment Service
+          |
+          v
+    Fallback
+
+Fallback বলতে cached data, default response, alternative processing বা অন্য কোনো predefined behavior বোঝাতে পারে।
+
+তবে খুব গুরুত্বপূর্ণ distinction: Fallback Circuit Breaker-এর mandatory component নয়। Circuit Breaker fallback ছাড়াও কাজ করতে পারে।
+অর্থাৎ:
+
+    Circuit Breaker
+          |
+          X
+    Downstream Service
+          |
+          v
+    Failure returned
+
+এটিও valid implementation।
+
+
+-> Circuit Breaker-এর জন্য কোনো একক universal component list নেই। কারণ Circuit Breaker pattern একটি design pattern, কোনো নির্দিষ্ট library
+বা protocol নয়। Resilience4j, Polly, Hystrix-এর মতো বিভিন্ন implementation-এ terminology, configuration এবং internal mechanism আলাদা হতে পারে।
+
+1. State Machine
+   - CLOSED
+   - OPEN
+   - HALF-OPEN
+
+2. Failure Detection / Failure Counting
+
+3. Failure Threshold
+
+4. Request Timeout
+   - অনেক ক্ষেত্রে আলাদা timeout mechanism-এর সাথে কাজ করে
+
+5. Open-State Duration
+   - Sleep Window / Wait Duration / Reset Timeout
+
+6. Half-Open Trial Request Control
+
+7. Recovery / Success Criteria
+
+8. Metrics / Sliding Window
+   - বিশেষ করে failure-rate ভিত্তিক decision-এর জন্য
+
+9. Fail-Fast Behavior
+
+10. Optional Fallback
+
+
+
+-> Architecture Diagram
+                         ┌──────────────────────┐
+                         │     Order Service    │
+                         │        Client        │
+                         └──────────┬───────────┘
+                                    │
+                                    │ Request
+                                    ▼
+                    ┌──────────────────────────────┐
+                    │       Circuit Breaker        │
+                    │                              │
+                    │  ┌────────────────────────┐  │
+                    │  │     State Machine      │  │
+                    │  │                        │  │
+                    │  │ CLOSED                 │  │
+                    │  │ OPEN                   │  │
+                    │  │ HALF_OPEN              │  │
+                    │  └────────────────────────┘  │
+                    │                              │
+                    │  Outcome Tracking            │
+                    │  Failure Evaluation          │
+                    │  Threshold / Window          │
+                    │  Wait Duration               │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+                 ALLOW                         REJECT
+                    │                             │
+                    ▼                             ▼
+          ┌──────────────────┐              Fallback /
+          │ Payment Service  │              Error Response
+          └──────────────────┘
+

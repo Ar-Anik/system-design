@@ -1,0 +1,309 @@
+Q : Service Discovery কেন প্রয়োজন?
+-> Microservice Architecture-এ একটি application সাধারণত অনেকগুলো ছোট ছোট service-এ বিভক্ত থাকে। যেমন একটি E-commerce system-এ
+Order Service, Payment Service, Inventory Service, Notification Service ইত্যাদি আলাদা service হিসেবে কাজ করতে পারে।
+
+এই service-গুলোর মধ্যে communication করার সময় একটি গুরুত্বপূর্ণ প্রশ্ন সামনে আসে,
+    Q : একটি service কীভাবে অন্য service-এর বর্তমান Network Address খুঁজে পাবে?
+
+উদাহরণ হিসেবে, Order Service-কে যদি Payment Service-এর কাছে একটি request পাঠাতে হয়, তাহলে Order Service-কে জানতে হবে Payment Service
+বর্তমানে কোন IP address এবং port-এ চলছে।
+
+Monolithic application-এ এই সমস্যা তুলনামূলকভাবে সহজ। কিন্তু Microservice এবং Cloud-native environment-এ service instance-গুলোর network
+location স্থির থাকে না। Service Discovery এই পরিবর্তনশীল environment-এ কোন service বর্তমানে কোথায় চলছে, সেটি খুঁজে বের করার mechanism প্রদান করে।
+
+
+-> প্রথমে একটি traditional Monolithic application বিবেচনা করা যাক। ধরা যাক একটি application একটি server-এ চলছে:
+    Client
+       |
+       v
+    Application Server
+    IP: 192.168.1.10
+    Port: 8000
+
+এখানে পুরো application একটি process বা একটি deployable application হিসেবে কাজ করছে। Application-এর ভিতরের বিভিন্ন module—যেমন User, Order,
+Payment—একই application-এর অংশ। ফলে Order Module থেকে Payment Module-এ communication করার জন্য network-এর মাধ্যমে আলাদা service খুঁজে
+বের করার প্রয়োজন হয় না।
+
+Monolithic Application
+┌───────────────────────────────┐
+│                               │
+│  User Module                  │
+│  Order Module                 │
+│  Payment Module               │
+│  Inventory Module             │
+│                               │
+└───────────────────────────────┘
+
+সব module একই application-এর ভিতরে থাকার কারণে function call, method call অথবা internal application mechanism ব্যবহার করেই communication
+করা যায়। এখানে:
+
+Order Module
+     |
+     | internal call
+     v
+Payment Module
+
+কোনো Payment Service IP খুঁজে বের করার প্রয়োজন নেই।
+
+-> Microservice Architecture-এ একই application-এর বিভিন্ন business capability আলাদা service হিসেবে deploy করা হয়।
+উদাহরণ:
+           E-Commerce System
+
+        ┌──────────────────────┐
+        │    Order Service     │
+        └──────────┬───────────┘
+                   |
+                   | HTTP / gRPC
+                   v
+        ┌──────────────────────┐
+        │   Payment Service    │
+        └──────────────────────┘
+
+এখন Order Service এবং Payment Service দুটি আলাদা application/process। তাই Order Service থেকে Payment Service-এ request পাঠাতে হলে একটি
+network destination প্রয়োজন। যেমন:
+
+Payment Service
+IP Address = 10.0.0.25
+Port       = 8000
+
+তখন request হতে পারে:
+Order Service
+      |
+      | HTTP Request
+      | 10.0.0.25:8000
+      v
+Payment Service
+
+এখানে একটি প্রশ্ন আসে, Order Service কীভাবে জানবে যে Payment Service বর্তমানে 10.0.0.25:8000-এ চলছে?
+
+Static environment-এ manually address configure করা সম্ভব হতে পারে। কিন্তু production Microservice environment-এ service instance-এর
+সংখ্যা এবং location পরিবর্তিত হতে থাকে।
+
+এখান থেকেই Service Discovery-এর প্রয়োজনীয়তা তৈরি হয়।
+
+
+-> Dynamic Network Location
+Service Discovery-এর সবচেয়ে গুরুত্বপূর্ণ কারণ হলো Dynamic Network Location। Cloud এবং container-based environment-এ service-এর instance-গুলো
+permanent physical machine হিসেবে কাজ করে না। ধরা যাক শুরুতে:
+
+Payment Service
+      |
+      v
+10.0.0.25:8000
+
+Order Service যদি এই Address hardcode করে রাখে : PAYMENT_SERVICE = 10.0.0.25:8000
+তাহলে প্রথম অবস্থায় request ঠিকভাবে কাজ করবে। কিন্তু পরে infrastructure পরিবর্তিত হলে:
+
+10.0.0.25:8000
+        X
+        |
+        | instance removed
+        v
+
+10.0.0.31:8000
+
+এখন Payment Service নতুন Address-এ চলছে। কিন্তু Order Service এখনও জানে: 10.0.0.25:8000
+ফলে request পুরনো Address-এ চলে যাবে এবং communication ব্যর্থ হতে পারে।
+
+Service Discovery এই সমস্যাটি সমাধান করে।
+
+
+-> Scale Up
+
+Microservice Architecture-এর একটি গুরুত্বপূর্ণ বৈশিষ্ট্য হলো horizontal scaling। ধরা যাক শুরুতে Payment Service-এর একটি instance রয়েছে:
+
+Payment Service
+┌────────────────────────┐
+│ Instance 1             │
+│ 10.0.0.25:8000         │
+└────────────────────────┘
+
+Application-এর traffic বৃদ্ধি পাওয়ার কারণে আরও instance চালু করা হলো:
+
+Payment Service
+┌────────────────────────┐
+│ Instance 1             │
+│ 10.0.0.25:8000         │
+└────────────────────────┘
+
+┌────────────────────────┐
+│ Instance 2             │
+│ 10.0.0.26:8000         │
+└────────────────────────┘
+
+┌────────────────────────┐
+│ Instance 3             │
+│ 10.0.0.27:8000         │
+└────────────────────────┘
+
+এখন Payment Service আর একটি নির্দিষ্ট machine বা IP-এর সাথে সম্পর্কিত নয়। একই logical service-এর একাধিক running instance রয়েছে।
+এখন Order Service-এর সামনে প্রশ্ন: Payment Service-এর কোন instance-এ request পাঠানো হবে?
+    - Service Discovery এই instance-গুলোর বর্তমান information সম্পর্কে জানতে সাহায্য করে।
+
+উদাহরণ:
+payment-service
+    |
+    ├── 10.0.0.25:8000
+    ├── 10.0.0.26:8000
+    └── 10.0.0.27:8000
+
+তারপর communication mechanism একটি appropriate instance নির্বাচন করতে পারে।
+
+
+-> Scale Down
+Scaling শুধু instance বাড়ানো নয়; traffic কমলে instance কমিয়েও দেওয়া হয়। ধরা যাক:
+
+Payment Service
+Instance 1 → 10.0.0.25:8000
+Instance 2 → 10.0.0.26:8000
+Instance 3 → 10.0.0.27:8000
+
+Traffic কমে যাওয়ার কারণে:
+Instance 3
+10.0.0.27:8000
+        |
+        v
+      Removed
+
+এখন valid instance:
+10.0.0.25:8000
+10.0.0.26:8000
+
+Service Discovery mechanism-এর registry বা equivalent mechanism থেকে removed instance-এর information বাদ দিতে পারে।
+ফলে নতুন request আর সেই unavailable instance-এর কাছে পাঠানোর কথা নয়।
+
+
+-> Service Crash
+
+ধরা যাক তিনটি Payment Service instance চলছে:
+Instance 1 → 10.0.0.25:8000
+Instance 2 → 10.0.0.26:8000
+Instance 3 → 10.0.0.27:8000
+
+হঠাৎ:
+
+Instance 2
+10.0.0.26:8000
+     |
+     X
+   Crash
+
+এখন ঐ instance request গ্রহণ করতে পারবে না। Service Discovery system-এর একটি গুরুত্বপূর্ণ কাজ হলো service instance-এর availability সম্পর্কে information maintain করা।
+এটি বিভিন্ন implementation অনুযায়ী health check, heartbeat, lease, registration expiry ইত্যাদি mechanism ব্যবহার করতে পারে।
+
+যদি কোনো instance আর available না থাকে, তাহলে সেটিকে discovery result থেকে বাদ দেওয়া যেতে পারে। ফলে:
+
+Available Payment Instances
+10.0.0.25:8000
+10.0.0.27:8000
+
+এর ফলে অন্য service unavailable instance-এর পরিবর্তে available instance ব্যবহার করতে পারে।
+
+
+-> Service Restart
+
+ধরা যাক একটি container বন্ধ হয়ে গেল।
+
+Payment Container
+IP: 10.0.0.25
+       |
+       X
+    stopped
+
+তারপর platform একটি নতুন container চালু করল:
+
+New Payment Container
+IP: 10.0.0.42
+
+এখানে গুরুত্বপূর্ণ বিষয় হলো:
+
+Old Address:
+10.0.0.25
+
+New Address:
+10.0.0.42
+
+একই logical service হলেও network location পরিবর্তিত হয়েছে। যদি অন্য service পুরনো IP-এর উপর নির্ভর করে, তাহলে communication failure হতে পারে।
+Service Discovery এই dynamic environment-এর সাথে মানিয়ে নিতে সাহায্য করে।
+
+
+-> Container Environment
+Docker বা Kubernetes-এর মতো container-based environment-এ application instance-কে সাধারণত একটি permanent server হিসেবে বিবেচনা করা হয় না।
+
+একটি container:
+Container A
+IP: 172.17.0.5
+
+কোনো কারণে remove হওয়ার পরে নতুন container:
+
+Container B
+IP: 172.17.0.9
+
+হতে পারে।
+
+অর্থাৎ:
+
+Same Service
+      |
+      +---- Old Instance → 172.17.0.5
+      |
+      +---- New Instance → 172.17.0.9
+
+এই কারণে application-এর configuration-এ সরাসরি একটি ephemeral container IP hardcode করা একটি weak design।
+Kubernetes-এর মতো platform সাধারণত এই problem-এর জন্য stable Service abstraction এবং service-name-based discovery
+প্রদান করে। অর্থাৎ application-কে প্রতিটি Pod-এর ephemeral IP জানতে হয় না।
+
+
+-> Service Discovery একটি logical service name এবং present network location-এর মধ্যে একটি mapping তৈরি করতে সাহায্য করে।
+উদাহরণ:
+
+payment-service
+       |
+       v
+┌──────────────────────────────┐
+│ Service Discovery / Registry │
+└──────────────┬───────────────┘
+               |
+       ┌───────┼────────┐
+       v       v        v
+   10.0.0.25  10.0.0.26  10.0.0.27
+      :8000      :8000      :8000
+
+এখানে Order Service-কে প্রতিটি instance-এর IP manually maintain করতে হয় না।
+
+Logical identity: payment-service
+এর মাধ্যমে current available instance information পাওয়া যায়।
+
+এটি Microservice Architecture-এর একটি গুরুত্বপূর্ণ abstraction তৈরি করে:
+Application
+     |
+     | "payment-service"
+     v
+Discovery Mechanism
+     |
+     v
+Current Network Location
+
+অর্থাৎ application-এর business logic-এর সাথে infrastructure-এর, changing network location-এর direct dependency কমে যায়।
+
+
+
+                 Microservice Environment
+                          |
+          ┌───────────────┼────────────────┐
+          ↓               ↓                ↓
+      Scale Up        Restart            Failure
+          ↓               ↓                ↓
+    New Instance      New Address      Instance Down
+          └───────────────┼────────────────┘
+                          ↓
+                Network Location Changes
+                          ↓
+                Hardcoded IP unreliable
+                          ↓
+                  Service Discovery
+                          ↓
+              Current Service Instances
+                          ↓
+                Service-to-Service
+                  Communication

@@ -1,0 +1,435 @@
+ধরা যাক একটি সাধারণ computer আছে :
+
+┌──────────────────────────────┐
+│          Computer            │
+│                              │
+│   CPU                        │
+│   RAM                        │
+│   SSD                        │
+│   Network Card               │
+│                              │
+│   Operating System           │
+│      └── Ubuntu Linux        │
+│                              │
+│   Applications               │
+│      ├── Nginx               │
+│      ├── Python Application  │
+│      └── API Gateway         │
+│                              │
+└──────────────────────────────┘
+
+এখানে কয়েকটি completely different জিনিস আছে।
+
+1. Computer
+Computer হলো actual computing machine। এর মধ্যে থাকে:
+CPU
+RAM
+Storage
+Network Interface
+
+এই machine-টি একটি physical machine
+
+2. Server
+এক অর্থে server বলতে একটি computer/machine বোঝানো হয়, যেটি network-এর মাধ্যমে অন্য computer-এর জন্য কোনো service প্রদান করছে।
+অন্য অর্থে server বলতে সেই software-কেও বোঝানো হয়, যেটি network Request গ্রহণ করে। এই দুই অর্থ আলাদা।
+
+উদাহরণ:
+Computer
+    │
+    └── Nginx
+
+এখানে Computer হলো machine। Nginx হলো software। Nginx network Request গ্রহণ করে বলে Nginx-কে একটি web server software বলা হয়।
+
+অন্যদিকে Cloud Server বললে সাধারণত একটি remote computing resource বোঝানো হয়।
+
+3. Software
+ধরা যাক একটি Python file আছে: print("Hello")
+এই Python code নিজে কোনো computer নয়। এটি একটি program/software-এর অংশ। একইভাবে:
+Nginx
+API Gateway
+Django
+FastAPI Application
+PostgreSQL
+Redis
+
+এগুলো software। Software-এর নিজের CPU বা RAM থাকে না। Software CPU এবং RAM ব্যবহার করে। অর্থাৎ:
+
+Computer
+   │
+   ├── CPU
+   ├── RAM
+   └── Storage
+          ▲
+          │
+          │ ব্যবহার করে
+          │
+      Software
+
+
+4. API Gateway
+API Gateway-ও মূলত একটি software/service। উদাহরণ হিসেবে একটি API Gateway application থাকতে পারে: api-gateway
+এই software-এর কাজ হতে পারে:
+
+        Request গ্রহণ
+              ↓
+        Authentication
+              ↓
+        Rate Limiting
+              ↓
+        Routing
+              ↓
+        Backend Service-এ Request পাঠানো
+              ↓
+        Response গ্রহণ
+              ↓
+        Client-কে Response পাঠানো
+
+কিন্তু একটি প্রশ্ন আসে: এই software-টি কোথায় থাকবে?
+
+
+5. Host
+Host বলতে সহজভাবে বোঝানো যায়:
+যে computing environment কোনো software বা service-কে execute করার জন্য resources প্রদান করছে, সেটি সেই software-এর host।
+
+একটি খুব সহজ উদাহরণ:
+Computer
+   │
+   └── Chrome
+
+এখানে Chrome একটি software। Computer Chrome-এর execution-এর জন্য CPU, RAM, storage ইত্যাদি resources দিচ্ছে।
+সুতরাং Computer-কে Chrome-এর host বলা যেতে পারে।
+
+একইভাবে:
+Computer
+   │
+   └── API Gateway
+এখানে Computer হলো API Gateway-এর host।
+
+
+6. Physical Server
+ধরা যাক একটি company-এর একটি physical machine আছে।
+
+┌───────────────────────────────────┐
+│        Physical Server            │
+│                                   │
+│ CPU: 16 Core                      │
+│ RAM: 64 GB                        │
+│ SSD: 1 TB                         │
+│ Network Interface                 │
+│                                   │
+│ Ubuntu Linux                      │
+│                                   │
+└───────────────────────────────────┘
+
+এটি একটি actual physical computer। এখন এই machine-এ API Gateway software install করা হলো।
+
+┌───────────────────────────────────┐
+│        Physical Server            │
+│                                   │
+│ CPU                               │
+│ RAM                               │
+│ SSD                               │
+│                                   │
+│ Ubuntu Linux                      │
+│                                   │
+│ API Gateway Software              │
+│                                   │
+└───────────────────────────────────┘
+
+এখন relationship:
+
+Physical Server
+      │
+      └── Ubuntu Linux
+              │
+              └── API Gateway Software
+
+এখানে:
+Physical Server = actual machine
+Ubuntu Linux = Operating System
+API Gateway = application/software
+
+
+৭. Host of API Gateway
+
+এই example-এ:
+Physical Server
+      │
+      └── Ubuntu
+              │
+              └── API Gateway
+
+API Gateway-এর host হিসেবে physical server-কে বলা যায়।
+আর একটু precise ভাবে বলা হলে, Gateway process যে operating environment-এর resources ব্যবহার করছে, সেই environment-টিও host হিসেবে উল্লেখ করা যায়।
+অর্থাৎ:
+Machine
+   ↓
+Operating System
+   ↓
+Application
+
+
+8. Linux VM
+ধরা যাক একটি physical server আছে।
+
+┌────────────────────────────────────────┐
+│          Physical Server               │
+│                                        │
+│       CPU / RAM / SSD                  │
+│                                        │
+│       Virtualization Layer             │
+│                                        │
+│    ┌──────────────────────────────┐    │
+│    │          Linux VM            │    │
+│    │                              │    │
+│    │      Ubuntu Linux            │    │
+│    │                              │    │
+│    │      API Gateway             │    │
+│    │                              │    │
+│    └──────────────────────────────┘    │
+│                                        │
+└────────────────────────────────────────┘
+
+Physical server-এর resources ব্যবহার করে একটি Virtual Machine (VM) তৈরি করা হয়েছে।
+
+VM-এর ভিতরে Ubuntu Linux আছে। Ubuntu environment-এর মধ্যে API Gateway process চলছে।
+
+Q : VM কী?
+VM অর্থ Virtual Machine. VM হলো একটি software-defined computer environment, যেটিকে একটি আলাদা computer-এর মতো ব্যবহার করা যায়।
+ধরা যাক একটি physical server:
+
+┌───────────────────────────────────┐
+│ Physical Server                   │
+│                                   │
+│ CPU = 32 cores                    │
+│ RAM = 128 GB                      │
+│                                   │
+└───────────────────────────────────┘
+
+এই machine-এর resources ভাগ করে কয়েকটি VM তৈরি করা যেতে পারে:
+
+┌──────────────────────────────────────────┐
+│           Physical Server                │
+│                                          │
+│  ┌─────────────┐  ┌─────────────┐        │
+│  │    VM-1     │  │    VM-2     │        │
+│  │             │  │             │        │
+│  │ Ubuntu      │  │ Ubuntu      │        │
+│  │             │  │             │        │
+│  │ API Gateway │  │ Order App   │        │
+│  └─────────────┘  └─────────────┘        │
+│                                          │
+└──────────────────────────────────────────┘
+
+Physical Server একটি actual machine। তার ভিতরে:
+VM-1, VM-2 দুটি virtual computer environment।
+
+VM-1-এর ভিতরে API Gateway থাকতে পারে।
+VM-2-এর ভিতরে Order Service থাকতে পারে।
+
+Physical Server
+       │
+       ├── VM-1
+       │     │
+       │     ├── Ubuntu
+       │     │
+       │     └── API Gateway
+       │
+       └── VM-2
+             │
+             ├── Ubuntu
+             │
+             └── Order Service
+
+VM API Gateway-এর জন্য computing environment প্রদান করছে।
+
+9. Cloud Server
+Cloud provider-এর কাছে হাজার হাজার physical server থাকতে পারে।
+
+উদাহরণ:
+Cloud Data Center
+       │
+       ├── Physical Server A
+       ├── Physical Server B
+       ├── Physical Server C
+       ├── Physical Server D
+       └── ...
+
+Cloud provider customer-কে সরাসরি physical machine না দিয়ে একটি virtual machine দিতে পারে।
+
+যেমন:
+Cloud Provider
+      │
+      ▼
+Virtual Machine
+      │
+      ▼
+Ubuntu Linux
+      │
+      ▼
+API Gateway
+
+এখন সেই VM-কে অনেক cloud platform-এর terminology-তে একটি cloud server বা cloud instance বলা হতে পারে।
+অর্থাৎ “Cloud Server” শব্দটি অনেক সময় physical machine নয়; এটি cloud provider-এর দেওয়া একটি virtualized computing resource।
+
+
+ধরা যাক একটি application আছে: Company API
+
+এর architecture:
+Client
+   │
+   ▼
+API Gateway
+   │
+   ├──► User Service
+   ├──► Order Service
+   └──► Payment Service
+
+এখন infrastructure তৈরি করা হয়েছে।
+প্রথমে একটি Cloud VM এর ভিতরে Ubuntu Linux install করা হলো।
+
+তারপর API Gateway software install করা হলো। তখন structure:
+
+┌─────────────────────────────────┐
+│          Cloud VM               │
+│                                 │
+│  Ubuntu Linux                   │
+│       │                         │
+│       └── API Gateway           │
+│                                 │
+└─────────────────────────────────┘
+
+এখানে:
+Cloud VM       = computing environment
+Ubuntu         = operating system
+API Gateway    = application/software
+
+এটাই মূল relationship।
+
+
+Q : API Gateway-এর নিজের কি IP Address থাকে?
+Gateway network-এর মাধ্যমে Request গ্রহণ করবে, তাই Gateway-এর network connectivity প্রয়োজন। ধরা যাক VM-এর একটি IP Address আছে: 203.0.113.10
+Gateway software একটি port-এ listen করছে: 0.0.0.0:443
+
+তখন একটি HTTPS Request: https://203.0.113.10
+এই VM-এর network interface-এ পৌঁছাতে পারে এবং port 443-এ listening Gateway process Request গ্রহণ করতে পারে।
+
+Conceptually:
+
+Internet
+   │
+   │ HTTPS
+   │
+   ▼
+203.0.113.10:443
+   │
+   ▼
+Cloud VM
+   │
+   ▼
+API Gateway Process
+
+এখানে IP Address machine/network interface-এর সঙ্গে associated। আর :443 হলো network port। Gateway software সেই port-এ listening করতে পারে।
+
+
+10. Domain
+মানুষকে IP Address মনে রাখতে না দিয়ে domain ব্যবহার করা হয়।
+ধরা যাক api.company.com, DNS configuration এই hostname-কে কোনো public endpoint-এর সঙ্গে map করতে পারে।
+
+সহজ example:
+ api.company.com
+        │
+        ▼
+  203.0.113.10
+        │
+        ▼
+   Cloud VM
+        │
+        ▼
+   API Gateway
+
+তখন Client : https://api.company.com/orders/101/ call করে।
+DNS resolution-এর পরে network traffic appropriate public endpoint-এ পৌঁছায়।
+তবে production architecture-এ মাঝখানে Load Balancer বা অন্য edge component থাকতে পারে:
+
+    api.company.com
+           │
+           ▼
+    Load Balancer
+           │
+           ▼
+    API Gateway
+
+তাই domain সাধারণত সরাসরি Gateway process-এর IP Address-এর synonym নয়।
+
+
+11. এখন পুরো জিনিসটি একটি building analogy দিয়ে দেখা যাক
+- একটি physical building আছে: Building
+
+- Building-এর ভিতরে একটি room আছে: Computer Room
+
+- Room-এর ভিতরে একটি computer আছে: Server
+
+- Server-এ operating system: Ubuntu
+
+- Ubuntu-এর মধ্যে একটি application: API Gateway
+
+তাহলে:
+    Building
+       ↓
+    Computer
+       ↓
+    Ubuntu
+       ↓
+    API Gateway
+
+এটি বোঝানোর জন্য useful analogy। কিন্তু cloud এবং VM এলে আরও একটি layer যোগ হতে পারে:
+
+    Cloud Data Center
+           ↓
+    Physical Server
+           ↓
+    Virtual Machine
+           ↓
+    Ubuntu Linux
+           ↓
+    API Gateway
+
+এখানে প্রতিটি layer-এর role আলাদা।
+
+
+12. Docker Container How Contain
+এবার VM-এর পরিবর্তে Docker ব্যবহার করা যাক। একটি machine আছে: Physical Server / VM
+
+তার মধ্যে: Operating System
+
+তার মধ্যে Docker: Docker Engine
+
+তারপর একটি container: API Gateway Container
+
+structure:
+
+┌──────────────────────────────────────┐
+│ VM / Physical Server                 │
+│                                      │
+│ Ubuntu Linux                         │
+│                                      │
+│ Docker Engine                        │
+│        │                             │
+│        ▼                             │
+│ ┌──────────────────────────────┐     │
+│ │ API Gateway Container        │     │
+│ │                              │     │
+│ │ API Gateway Process          │     │
+│ └──────────────────────────────┘     │
+│                                      │
+└──────────────────────────────────────┘
+
+এখানে API Gateway আবারও software। Container software-টির জন্য isolated execution environment প্রদান করছে।
+
+তাই : API Gateway ≠ Docker Container
+
+বরং:
+Docker Container
+      │
+      └── API Gateway Process

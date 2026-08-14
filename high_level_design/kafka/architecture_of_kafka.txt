@@ -1,0 +1,308 @@
+Apache Kafka একটি Distributed Event Streaming Platform, যার Architecture Distributed Client-Server Model-এর উপর ভিত্তি করে তৈরি।
+
+এখানে Producer, Consumer এবং Kafka Broker একে অপরের সাথে নেটওয়ার্কের মাধ্যমে যোগাযোগ করে। একাধিক Broker মিলে একটি Kafka Cluster গঠন করে। Cluster-এর প্রতিটি Broker Data সংরক্ষণ, Client-এর Request পরিচালনা এবং অন্যান্য Broker-এর সাথে Data Replication-এর কাজ করে।
+
+Kafka-তে Data সরাসরি File আকারে সংরক্ষণ করা হয় না। প্রথমে Data একটি Topic-এ পাঠানো হয়। প্রতিটি Topic আবার এক বা একাধিক Partition-এ বিভক্ত থাকে। প্রতিটি Partition একটি Append-Only Commit Log, যেখানে নতুন Record সবসময় Log-এর শেষে যোগ (Append) করা হয়।
+
+Kafka-এর Architecture-এর মূল উদ্দেশ্য হলো—
+
+অনেক বেশি পরিমাণ Data (High Throughput) পরিচালনা করা।
+Data হারিয়ে যাওয়া রোধ করা (Fault Tolerance)।
+একাধিক Server-এ Load ভাগ করে দেওয়া (Horizontal Scalability)।
+একই Data অনেক Consumer-কে স্বাধীনভাবে পড়ার সুযোগ দেওয়া।
+Real-time Event Streaming নিশ্চিত করা।
+
+এই লক্ষ্যগুলো অর্জনের জন্য Kafka-এর Architecture কয়েকটি গুরুত্বপূর্ণ নীতির উপর ভিত্তি করে কাজ করে।
+
+১. Distributed Cluster
+
+Kafka একটি মাত্র Server-এর উপর নির্ভর করে না। বরং একাধিক Broker (Server) নিয়ে একটি Cluster তৈরি করে।
+
+একটি Topic-এর Partition-গুলো Cluster-এর বিভিন্ন Broker-এ ছড়িয়ে (Distribute) রাখা হয়। ফলে সমস্ত Load একটি Broker-এর উপর না পড়ে বিভিন্ন Broker-এর মধ্যে ভাগ হয়ে যায়।
+
+যদি Data-এর পরিমাণ বা Client-এর সংখ্যা বেড়ে যায়, তাহলে নতুন Broker যোগ করেই Cluster-এর ক্ষমতা বাড়ানো যায়। এটিকে Horizontal Scaling বলা হয়।
+
+২. Topic এবং Partition
+
+Kafka-তে কোনো Data (Event/Message) সংরক্ষণ করার আগে Producer-কে অবশ্যই বলতে হয়, কোন Topic-এ Data পাঠানো হবে।
+
+Topic হলো একই ধরনের Event (Message)-গুলোকে একসাথে রাখার জন্য একটি Logical Category বা নাম। অর্থাৎ, একই ধরনের Event একটি নির্দিষ্ট Topic-এর অধীনে রাখা হয়।
+
+উদাহরণ:
+
+order-events Topic → Order সম্পর্কিত Event
+payment-events Topic → Payment সম্পর্কিত Event
+delivery-events Topic → Delivery সম্পর্কিত Event
+
+একটি Topic-এর সমস্ত Data একটি জায়গায় সংরক্ষণ করা হয় না। বরং Topic-টিকে এক বা একাধিক Partition-এ ভাগ করা হয়।
+
+Partition হলো Topic-এর ভিতরে Data সংরক্ষণের প্রকৃত স্থান। প্রতিটি Partition একটি Append-Only Commit Log হিসেবে কাজ করে। অর্থাৎ, নতুন Record সবসময় Partition-এর শেষে (End of the Log) যোগ (Append) করা হয়। Kafka কখনো নতুন Record-কে মাঝখানে Insert করে না বা আগের Record-এর অবস্থান পরিবর্তন করে না।
+
+Producer যখন কোনো Event পাঠায়, Kafka প্রথমে দেখে Event-টি কোন Topic-এর জন্য এসেছে। এরপর Partitioning Rule (যেমন Message Key বা Partitioner) অনুযায়ী সেই Event-টিকে Topic-এর একটি নির্দিষ্ট Partition-এ সংরক্ষণ করে।
+
+Kafka Partition-এ সংরক্ষিত প্রতিটি Record-এর জন্য একটি Offset তৈরি করে। Offset হলো সেই Partition-এর মধ্যে Record-এর ধারাবাহিক নম্বর, যা 0, 1, 2, 3 ... এভাবে বাড়তে থাকে।
+
+Consumer এই Offset ব্যবহার করে বুঝতে পারে কোন Record পড়েছে এবং পরবর্তী কোন Record পড়তে হবে।
+
+Kafka শুধুমাত্র একই Partition-এর মধ্যে Record-এর ক্রম (Ordering) নিশ্চিত করে। যদি একটি Topic-এ একাধিক Partition থাকে, তাহলে এক Partition-এর Record-এর সাথে অন্য Partition-এর Record-এর কোনো নির্দিষ্ট ক্রম (Ordering) Kafka নিশ্চিত করে না।
+
+৩. Leader এবং Follower Replica
+
+Fault Tolerance নিশ্চিত করার জন্য Kafka প্রতিটি Partition-এর একাধিক Copy (Replica) রাখতে পারে।
+
+এই Replica-গুলোর মধ্যে—
+
+Leader Replica
+
+Leader হলো Partition-এর মূল Replica।
+
+সেই Partition-এর সমস্ত Read এবং Write Operation শুধুমাত্র Leader-এর মাধ্যমেই সম্পন্ন হয়।
+
+Producer কখনো Follower-এ Data লেখে না এবং Consumer-ও Follower থেকে Data পড়ে না (স্বাভাবিক Client Operation-এ)।
+
+Follower Replica
+
+Follower Replica নিজে কোনো Client Request Process করে না।
+
+Follower-এর কাজ হলো Leader থেকে ধারাবাহিকভাবে নতুন Record Copy করে নিজের Log আপডেট রাখা।
+
+যদি Leader Broker Failure হয়, তাহলে In-Sync Replica (ISR)-এর মধ্য থেকে একটি Replica নতুন Leader হিসেবে নির্বাচিত হয়।
+
+এতে System বন্ধ না হয়ে কাজ চালিয়ে যেতে পারে।
+
+৪. Replication এবং Fault Tolerance
+
+Kafka Replication ব্যবহার করে একই Data একাধিক Broker-এ সংরক্ষণ করে।
+
+যদি কোনো Broker নষ্ট হয়ে যায়, তাহলে অন্য Broker-এ থাকা Replica ব্যবহার করে Service চালিয়ে যাওয়া সম্ভব হয়।
+
+Replication-এর মাধ্যমে Kafka Data Loss-এর সম্ভাবনা অনেক কমিয়ে দেয় এবং High Availability নিশ্চিত করে।
+
+৫. Sequential Disk Write এবং Page Cache
+
+Kafka Random Disk Write করার পরিবর্তে Data ধারাবাহিকভাবে (Sequentially) Disk-এ লিখে।
+
+Sequential Write হওয়ায় Disk Head বারবার বিভিন্ন স্থানে যেতে হয় না, ফলে Write Performance অনেক দ্রুত হয়।
+
+Kafka Application-Level Memory Cache ব্যবহার করে না।
+
+বরং Operating System-এর Page Cache ব্যবহার করে, যেখানে সম্প্রতি ব্যবহৃত File Data RAM-এ Cache হয়ে থাকে।
+
+ফলে একই Data বারবার Disk থেকে পড়তে হয় না এবং Read Performance বৃদ্ধি পায়।
+
+৬. Zero-Copy Transfer
+
+Kafka-এর প্রধান লক্ষ্য হলো Data যত দ্রুত সম্ভব Consumer-এর কাছে পৌঁছে দেওয়া। এজন্য Kafka Zero-Copy নামে একটি বিশেষ প্রযুক্তি ব্যবহার করে।
+
+এটি বোঝার আগে সাধারণভাবে Data কীভাবে পাঠানো হয়, সেটি বুঝতে হবে।
+
+সাধারণভাবে যখন কোনো Application Disk থেকে Data পড়ে Network-এর মাধ্যমে অন্য কম্পিউটারে পাঠায়, তখন Data কয়েকটি ধাপে এক জায়গা থেকে আরেক জায়গায় Copy হয়।
+
+ধাপগুলো হলো—
+
+প্রথমে Data Disk থেকে Operating System-এর Page Cache-এ আসে।
+এরপর Page Cache থেকে Data Application (Kafka)-এর Memory (User Space)-এ Copy হয়।
+তারপর Kafka আবার সেই Data Operating System (Kernel Space)-এ ফিরিয়ে দেয়।
+এরপর Operating System সেই Data Network-এর মাধ্যমে Consumer-এর কাছে পাঠায়।
+
+অর্থাৎ, একই Data Consumer-এর কাছে যাওয়ার আগে অপ্রয়োজনীয়ভাবে একাধিকবার Memory-তে Copy হয়।
+
+এই অতিরিক্ত Copy করার কারণে—
+
+CPU-কে বারবার Copy করার কাজ করতে হয়।
+Memory Bandwidth বেশি ব্যবহার হয়।
+Data পাঠাতে বেশি সময় লাগে।
+
+Kafka এই সমস্যার সমাধানের জন্য Zero-Copy Transfer ব্যবহার করে।
+
+Zero-Copy-তে Kafka Data-কে নিজের Memory (User Space)-এ নিয়ে আসে না।
+
+বরং Kafka Operating System-কে বলে—
+
+"যে Data Page Cache-এ আছে, সেটি সরাসরি Network-এর মাধ্যমে Consumer-এর কাছে পাঠিয়ে দাও।"
+
+তখন Operating System Page Cache থেকে Data সরাসরি Network Socket-এ পাঠিয়ে দেয়।
+
+ফলে Kafka-এর Memory-তে Data Copy করার প্রয়োজন হয় না।
+
+এ কারণেই এই প্রযুক্তির নাম Zero-Copy। এর অর্থ Data একেবারেই Copy হয় না—এমন নয়। এর অর্থ হলো Application (Kafka)-এর User Space-এ অতিরিক্ত Copy করার প্রয়োজন হয় না। Copy-এর সংখ্যা উল্লেখযোগ্যভাবে কমে যায়।
+
+এই পদ্ধতি ব্যবহারের ফলে—
+
+CPU-এর কাজ কমে যায়, কারণ বারবার Data Copy করতে হয় না।
+Memory-এর উপর চাপ কমে যায়।
+Data আরও দ্রুত Consumer-এর কাছে পৌঁছে যায়।
+একই Hardware ব্যবহার করে Kafka আরও বেশি Data পাঠাতে পারে (High Throughput)।
+Network Latency কমে যায়।
+সহজ উদাহরণ
+
+ধরো, একটি বই একজনের কাছে পৌঁছে দিতে হবে।
+
+সাধারণ পদ্ধতি:
+
+আলমারি → টেবিল → ব্যাগ → কুরিয়ার
+
+এখানে বইটি এক জায়গা থেকে আরেক জায়গায় বারবার সরাতে হচ্ছে।
+
+Zero-Copy পদ্ধতি:
+
+আলমারি → কুরিয়ার
+
+এখানে মাঝের অপ্রয়োজনীয় ধাপগুলো বাদ দেওয়া হয়েছে।
+
+Kafka-ও একইভাবে Data-কে নিজের Memory-তে অপ্রয়োজনীয়ভাবে না এনে, Operating System-এর সাহায্যে Page Cache থেকে সরাসরি Network-এ পাঠায়। তাই Data দ্রুত পাঠানো যায় এবং System-এর Performance বৃদ্ধি পায়।
+
+৭. Log Compaction
+
+Kafka-তে সাধারণভাবে একটি Record একবার Log-এ লেখা হলে সেটি সঙ্গে সঙ্গে মুছে ফেলা হয় না। Record Log-এ সংরক্ষিত থাকে যতক্ষণ না Retention Policy অনুযায়ী সেটি সরানো হয়।
+
+কিন্তু অনেক ক্ষেত্রে আমাদের পুরোনো সব Record দরকার হয় না। বরং একটি নির্দিষ্ট Key-এর সর্বশেষ (Latest) অবস্থা জানলেই যথেষ্ট।
+
+এই সমস্যার সমাধানের জন্য Kafka Log Compaction নামে একটি Feature প্রদান করে।
+
+Key বলতে কী বোঝায়?
+
+এখানে Key বলতে Kafka Message-এর Key বোঝায়।
+
+এটি Offset নয়।
+
+Producer যখন Kafka-তে একটি Message পাঠায়, তখন চাইলে Message-এর সাথে একটি Key দিতে পারে।
+
+উদাহরণ:
+
+Key	Value
+101	Anik
+102	Rahim
+103	Karim
+
+এখানে—
+
+101, 102, 103 হলো Message-এর Key।
+Anik, Rahim, Karim হলো Message-এর Value।
+
+অন্যদিকে Kafka যখন এই Message-গুলো Partition-এ সংরক্ষণ করে, তখন প্রতিটি Message-এর জন্য একটি Offset তৈরি করে।
+
+উদাহরণ:
+
+Offset	Key	Value
+0	101	Anik
+1	102	Rahim
+2	103	Karim
+
+এখানে Offset এবং Key সম্পূর্ণ আলাদা বিষয়।
+
+Key Producer দেয়।
+Offset Kafka তৈরি করে।
+তাহলে Log Compaction কী করে?
+
+ধরো, একই User-এর তথ্য সময়ের সাথে পরিবর্তন হচ্ছে।
+
+Producer নিচের Message-গুলো Kafka-তে পাঠাল।
+
+Offset	Key (User ID)	Value (Name)
+0	101	Anik
+1	102	Rahim
+2	101	Anik Hasan
+3	103	Karim
+4	101	A. Hasan
+
+এখানে লক্ষ্য করো—
+
+Key = 101 তিনবার এসেছে।
+
+কারণ একই User-এর তথ্য তিনবার Update হয়েছে।
+
+Log Compaction বন্ধ থাকলে কী হবে?
+
+যদি Log Compaction চালু না থাকে, তাহলে Kafka সব Record রেখে দেবে।
+
+Offset	Key	Value
+0	101	Anik
+1	102	Rahim
+2	101	Anik Hasan
+3	103	Karim
+4	101	A. Hasan
+
+সব Version Log-এ থেকে যাবে।
+
+Log Compaction চালু থাকলে কী হবে?
+
+Kafka সময়ে সময়ে Log পরীক্ষা করবে।
+
+দেখবে যে—
+
+Key 101-এর একাধিক Record আছে।
+
+তখন Kafka Key = 101-এর সর্বশেষ Record রেখে পুরোনো Record-গুলো ধীরে ধীরে সরিয়ে দেবে।
+
+ফলাফল হবে—
+
+Offset	Key	Value
+1	102	Rahim
+3	103	Karim
+4	101	A. Hasan
+
+এখানে—
+
+Key = 101-এর পুরোনো দুইটি Record সরিয়ে দেওয়া হয়েছে।
+শুধুমাত্র সর্বশেষ Record রাখা হয়েছে।
+
+এটাই Log Compaction।
+
+কেন Log Compaction ব্যবহার করা হয়?
+
+অনেক Application-এ কোনো Object-এর বর্তমান (Current) অবস্থা জানাই গুরুত্বপূর্ণ।
+
+যেমন—
+
+একজন User-এর নাম ১০ বার পরিবর্তন হয়েছে।
+
+পুরোনো ৯টি নাম দরকার নেই।
+
+শুধু বর্তমান নাম জানলেই যথেষ্ট।
+
+এই ধরনের পরিস্থিতিতে Log Compaction খুব উপকারী।
+
+এটি বিশেষভাবে ব্যবহৃত হয়—
+
+User Profile
+Product Information
+Inventory Status
+Configuration Data
+Change Data Capture (CDC)
+Kafka Streams State Store
+Log Compaction কীভাবে কাজ করে?
+
+Log Compaction নতুন Message আসার সঙ্গে সঙ্গে পুরোনো Record মুছে দেয় না।
+
+Kafka Background-এ একটি Cleaner Process চালায়।
+
+এই Cleaner Process সময়ে সময়ে Log Scan করে।
+
+যদি একই Key-এর একাধিক Record পাওয়া যায়, তাহলে সর্বশেষ Record রেখে পুরোনো Record ধীরে ধীরে সরিয়ে দেয়।
+
+অর্থাৎ Log Compaction একটি Background Process।
+
+Retention Policy এবং Log Compaction-এর পার্থক্য
+
+Retention Policy
+
+Retention Policy Record-এর বয়স (Time) অথবা Log Size দেখে পুরোনো Record সরায়।
+
+এখানে Record-এর Key কী, সেটি গুরুত্বপূর্ণ নয়।
+
+Log Compaction
+
+Log Compaction Record-এর Key দেখে কাজ করে।
+
+যদি একই Key-এর একাধিক Record থাকে, তাহলে সর্বশেষ Record রেখে পুরোনো Version ধীরে ধীরে সরিয়ে দেয়।
+
+৮. Exactly-Once Semantics (EOS)
+
+Kafka Transaction এবং Idempotent Producer Support করে।
+
+এই Feature-এর মাধ্যমে নির্দিষ্ট পরিস্থিতিতে (যেমন Kafka Streams বা Read-Process-Write Workflow) Kafka নিশ্চিত করতে পারে যে একই Message একাধিকবার Process হবে না এবং ভুলভাবে Duplicate Result তৈরি হবে না।
+
+তবে Exactly-Once Guarantee শুধুমাত্র Kafka-এর Transactional Mechanism সঠিকভাবে ব্যবহার করলে কার্যকর হয়।
+
+এটি Kafka-এর Default Behavior নয়।

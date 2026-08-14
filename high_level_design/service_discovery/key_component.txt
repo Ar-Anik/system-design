@@ -1,0 +1,690 @@
+Service Discovery-এর Key Components
+
+# Core Components / Mechanisms
+1. Service Instance
+2. Service Registry
+3. Service Registration
+4. Service Deregistration
+5. Health Checking / Heartbeat / Lease Renewal
+6. Service Discovery / Lookup / Query
+7. Service Metadata
+
+# Participants
+8. Service Provider
+9. Service Consumer
+
+# Supporting / Operational Concerns
+10. Service Instance Selection / Load Balancing
+11. Failure Detection
+12. Registry Consistency & Availability
+
+1. Service Instance
+Service Instance হলো একটি service-এর running copy বা deployed instance।
+
+ধরা যাক একটি E-commerce system-এ একটি:
+
+Order Service
+
+রয়েছে।
+
+Production environment-এ Order Service-এর একটি instance না রেখে load handle করার জন্য তিনটি instance চালানো হতে পারে:
+
+Order Service
+
+Instance-1 → 10.0.1.10:8000
+Instance-2 → 10.0.1.11:8000
+Instance-3 → 10.0.1.12:8000
+
+এখানে তিনটিই একই logical service-এর instance।
+
+অর্থাৎ:
+
+Logical Service
+      │
+      ├── Instance-1
+      ├── Instance-2
+      └── Instance-3
+
+প্রতিটি instance-এর সাধারণত কিছু information থাকে:
+
+Service Name
+Instance ID
+IP / Hostname
+Port
+Protocol
+Health Status
+Metadata
+
+যেমন:
+
+Service Name: order-service
+Instance ID: order-01
+Address: 10.0.1.10
+Port: 8000
+Protocol: HTTP
+Status: Healthy
+কেন Service Instance গুরুত্বপূর্ণ?
+
+কারণ Microservices environment-এ logical service এবং তার running instance একই জিনিস নয়।
+
+order-service
+     │
+     ├── 10.0.1.10:8000
+     ├── 10.0.1.11:8000
+     └── 10.0.1.12:8000
+
+Service Discovery এই instance-গুলোর information discover করার ব্যবস্থা করে।
+
+2. Service Registry
+
+Service Registry হলো Service Discovery system-এর central information store যেখানে বর্তমানে available service instance-গুলোর Address এবং metadata সংরক্ষিত থাকে।
+
+একটি Registry-কে সহজভাবে একটি dynamic directory হিসেবে ভাবা যায়।
+
+উদাহরণ:
+
+Service Registry
+
+order-service
+ ├── 10.0.1.10:8000
+ ├── 10.0.1.11:8000
+ └── 10.0.1.12:8000
+
+payment-service
+ ├── 10.0.2.10:8000
+ └── 10.0.2.11:8000
+
+inventory-service
+ ├── 10.0.3.10:8000
+ └── 10.0.3.11:8000
+
+Registry জানে:
+
+কোন service-এর কোন instance বর্তমানে available এবং সেই instance-এ কীভাবে যোগাযোগ করা যাবে।
+
+Registry কেন দরকার?
+
+Static configuration হলে এমন হতে পারত:
+
+payment-service = 10.0.2.10:8000
+
+কিন্তু cloud environment-এ instance restart হতে পারে, নতুন instance তৈরি হতে পারে, পুরনো instance remove হতে পারে।
+
+ফলে Address পরিবর্তিত হতে পারে।
+
+Service Registry এই dynamic information track করে।
+
+উদাহরণ
+
+Registry হিসেবে বিভিন্ন technology ব্যবহার করা যায়, যেমন:
+
+HashiCorp Consul
+Apache Software Foundation ZooKeeper
+Kubernetes-এর built-in Service এবং DNS-based service discovery
+
+তবে implementation ভেদে architecture এবং mechanism আলাদা হতে পারে।
+
+3. Service Registration
+
+Service Registration হলো একটি service instance-এর নিজের information Service Registry-তে Registration করার process।
+
+ধরা যাক নতুন একটি Payment Service instance চালু হয়েছে:
+
+payment-service
+10.0.2.15:8000
+
+Instance চালু হওয়ার পর Registry-কে জানাতে হবে:
+
+I am payment-service.
+My Address is 10.0.2.15.
+My port is 8000.
+
+তখন Registry-তে entry তৈরি হবে:
+
+payment-service
+    │
+    └── 10.0.2.15:8000
+
+Registration-এর সাধারণ flow
+Payment Service
+      │
+      │ Register
+      ▼
+Service Registry
+      │
+      ▼
+Store Instance Information
+
+Registration information-এর মধ্যে থাকতে পারে:
+
+Service Name
+Instance ID
+Host/IP
+Port
+Protocol
+Health Check Information
+Metadata
+
+Q : Service Registration কখন হয়?
+-> Application চালু হওয়ার সময় বা চালু হওয়ার পর, configuration এবং architecture অনুযায়ী application নিজে অথবা কোনো supporting mechanism Service Registry-কে জানায়:
+
+"payment-service-এর এই instance available।"
+
+উদাহরণ:
+
+Service Name = payment-service
+Instance ID  = payment-01
+Address      = 10.0.1.10
+Port         = 8000
+
+এই information Registry-তে পাঠানো হয়।
+
+তখন:
+
+┌─────────────────────────────────────┐
+│      Payment Service Instance       │
+│                                     │
+│              │                      │
+│              │ Registration         │
+│              ▼                      │
+│       Service Registry              │
+└─────────────────────────────────────┘
+
+Registry information save করে।
+
+ধরা যাক Service Registry হলো একটি directory। শুরুতে Registry-তে:
+┌─────────────────────────────────────┐
+│       Service Registry              │
+│                                     │
+│       payment-service               │
+│           → কিছু নেই                  │
+└─────────────────────────────────────┘
+
+এখন একটি Payment Service instance চালু হলো। Application Registry-কে জানাল:
+
+┌─────────────────────────────────────┐
+| Register:                           |
+|                                     |
+| service = payment-service           |
+| address = 10.0.1.10                 |
+| port    = 8000                      |
+└─────────────────────────────────────┘
+
+Registry information save করল:
+
+┌─────────────────────────────────────┐
+│          Service Registry           │
+│                                     │
+│  payment-service                    │
+│      └── 10.0.1.10:8000             │
+└─────────────────────────────────────┘
+
+এটাই Service Registration।
+
+আরেকটি container চালু হলো:
+
+┌─────────────────────────────────────┐
+│             Container 2             │
+│                  ↓                  │
+│          Payment Service            │
+│                  ↓                  │
+│           10.0.1.11:8000            │
+└─────────────────────────────────────┘
+
+এই instance-ও Registry-তে registration করে।
+
+এখন Registry:
+
+┌─────────────────────────────────────┐
+│          Service Registry           │
+│                                     │
+│  payment-service                    │
+│      ├── 10.0.1.10:8000             │
+│      └── 10.0.1.11:8000             │
+└─────────────────────────────────────┘
+
+তৃতীয় instance চালু হলে:
+
+┌─────────────────────────────────────┐
+│          Service Registry           │
+│                                     │
+│  payment-service                    │
+│      ├── 10.0.1.10:8000             │
+│      ├── 10.0.1.11:8000             │
+│      └── 10.0.1.12:8000             │
+└─────────────────────────────────────┘
+
+সব Service Discovery system-এ registration করার পদ্ধতি এক নয়।
+
+দুটি common model রয়েছে।
+
+Model 1 — Application নিজে Register করে
+
+এটিকে সাধারণভাবে Self Registration বলা হয়।
+
+Flow:
+┌─────────────────────────────────────┐
+│          Application starts         │
+│                  ↓                  │
+│   Application connects to Registry  │
+│                  ↓                  │
+│      Application registers itself   │
+│                  ↓                  │
+│        Registry stores instance     │
+└─────────────────────────────────────┘
+
+উদাহরণ:
+┌─────────────────────────────────────┐
+│          Payment Service            │
+│                  │                  │
+│                  │ "Register        │
+│                  │  payment-01"     │
+│                  ▼                  │
+│          Service Registry           │
+└─────────────────────────────────────┘
+
+Model 2 — অন্য mechanism Registration করে
+কিছু architecture-এ application নিজে সরাসরি Registry-তে registration করে না।
+
+কোনো platform, orchestrator বা agent service instance-এর information Registry/discovery system-এ publish করে।
+
+বিশেষ করে container orchestration environment-এ এই ধরনের architecture দেখা যায়।
+
+
+4. Service Deregistration
+
+Service বন্ধ হয়ে গেলে Registry-তে তার entry থাকা উচিত নয়।
+
+এই process-কে Service Deregistration বলা হয়।
+
+ধরা যাক:
+┌──────────────────────────────────────┐
+│          payment-service             │
+│                                      │
+│          10.0.2.10:8000              │
+│          10.0.2.11:8000              │
+│          10.0.2.12:8000              │
+└──────────────────────────────────────┘
+
+এর মধ্যে 10.0.2.11 instance বন্ধ হয়ে গেল।
+
+যদি Registry এখনও সেটিকে available হিসেবে রাখে:
+┌──────────────────────────────────────┐
+│  payment-service                     │
+│   ├── 10.0.2.10:8000  ✓              │
+│   ├── 10.0.2.11:8000  ✗              │
+│   └── 10.0.2.12:8000  ✓              │
+└──────────────────────────────────────┘
+
+তাহলে অন্য service ভুল করে 10.0.2.11-এ request পাঠাতে পারে।
+
+তাই instance বন্ধ হওয়ার সময় Registry থেকে entry remove করা দরকার।
+┌──────────────────────────────────────┐
+│          Instance Shutdown           │
+│                  ↓                   │
+│              Deregister              │
+│                  ↓                   │
+│       Registry removes instance      │
+└──────────────────────────────────────┘
+
+তবে service যদি হঠাৎ crash করে এবং deregistration করতে না পারে, তখন health checking, TTL, lease বা heartbeat-এর মতো mechanism
+ব্যবহৃত হতে পারে—implementation অনুযায়ী।
+
+
+5. Health Checking
+শুধু Registry-তে registration থাকলেই একটি instance সত্যিই usable—এমন নয়।
+
+একটি instance crash করতে পারে, network থেকে বিচ্ছিন্ন হতে পারে বা application internally unhealthy হতে পারে।
+
+তাই Service Discovery system-এ Health Checking অত্যন্ত গুরুত্বপূর্ণ।
+
+ধরা যাক:
+
+payment-service
+
+Instance-1 → Healthy
+Instance-2 → Healthy
+Instance-3 → Failed
+
+Registry-কে বুঝতে হবে:
+
+Instance-3 → আর request নেওয়ার উপযুক্ত নয়
+Health Check কীভাবে হতে পারে?
+
+সাধারণভাবে:
+
+Registry / Health Checker
+          │
+          │ Health Check
+          ▼
+Payment Service
+          │
+          ▼
+       Healthy
+
+উদাহরণ:
+
+GET /health
+
+Response:
+
+200 OK
+
+তাহলে instance healthy হিসেবে বিবেচিত হতে পারে।
+
+আবার:
+
+Connection Failed
+
+বা health check failure হলে instance unhealthy হিসেবে mark করা হতে পারে।
+
+
+6. Service Discovery / Lookup
+এটি Service Discovery-এর সবচেয়ে গুরুত্বপূর্ণ অংশগুলোর একটি।
+
+একটি service যখন অন্য service-এর Address জানে না, তখন Registry থেকে information খোঁজার process হলো Service Lookup / Discovery।
+
+ধরা যাক:
+
+Order Service
+     │
+     │ Need Payment Service
+     ▼
+Service Registry
+
+Order Service Registry-কে জিজ্ঞেস করতে পারে:
+
+"Give me available instances of payment-service."
+
+Registry response দিতে পারে:
+
+payment-service
+
+10.0.2.10:8000
+10.0.2.11:8000
+
+তারপর Order Service available instance-এর একটি নির্বাচন করে request পাঠায়।
+
+Order Service
+      │
+      │ lookup
+      ▼
+Service Registry
+      │
+      │ instances
+      ▼
+10.0.2.10:8000
+10.0.2.11:8000
+      │
+      ▼
+Select instance
+      │
+      ▼
+Payment Service
+
+
+7. Service Consumer
+
+Service Consumer হলো যে service অন্য একটি service-এর functionality ব্যবহার করতে চায়।
+
+উদাহরণ:
+
+Order Service
+      ↓
+Payment Service
+
+এখানে:
+
+Order Service = Consumer
+Payment Service = Provider
+
+Order Service Payment Service-এর Address জানতে Service Discovery ব্যবহার করতে পারে।
+
+Order Service
+     │
+     │ Discover payment-service
+     ▼
+Registry
+     │
+     │ Return instances
+     ▼
+Order Service
+     │
+     ▼
+Payment Service
+
+# Consumer-এর কাজ
+Consumer সাধারণত:
+কোন service দরকার তা নির্ধারণ করে
+Registry থেকে instance খোঁজে
+একটি available instance নির্বাচন করে
+সেই instance-এ request পাঠায়
+
+
+8. Service Provider
+
+Service Provider হলো যে service অন্য service-এর জন্য functionality প্রদান করে।
+
+উদাহরণ:
+
+Order Service
+      │
+      │ calls
+      ▼
+Payment Service
+
+এখানে Payment Service হলো Provider।
+
+Provider-এর instance:
+
+Payment Service
+
+Instance-1 → 10.0.2.10:8000
+Instance-2 → 10.0.2.11:8000
+
+Provider-এর instance-গুলো Registry-তে নিজেদের information register করে।
+
+Payment Instance
+      │
+      │ Registration
+      ▼
+Registry
+
+
+9. Service Metadata
+
+Registry শুধু IP এবং Port রাখতেই হবে—এমন নয়।
+
+প্রয়োজন অনুযায়ী Metadata সংরক্ষণ করা যায়।
+
+Metadata হলো service instance সম্পর্কে অতিরিক্ত information।
+
+উদাহরণ:
+
+Service:
+payment-service
+
+Address:
+10.0.2.10
+
+Port:
+8000
+
+Metadata:
+version = v2
+region = asia-south
+zone = zone-a
+protocol = HTTP
+environment = production
+
+এতে আরও sophisticated discovery সম্ভব হয়।
+
+যেমন কোনো Consumer শুধুমাত্র:
+
+payment-service
+version = v2
+region = asia-south
+
+এর instance চাইতে পারে।
+
+তখন Registry matching instance return করতে পারে।
+
+
+10. Service Instance Selection / Load Balancing
+
+একটি service-এর একাধিক healthy instance পাওয়া গেলে একটি গুরুত্বপূর্ণ প্রশ্ন আসে:
+
+কোন instance-এ request পাঠানো হবে?
+
+ধরা যাক:
+
+payment-service
+
+Instance-1 → 10.0.2.10
+Instance-2 → 10.0.2.11
+Instance-3 → 10.0.2.12
+
+তখন একটি instance নির্বাচন করতে হবে।
+
+এই selection-এর জন্য বিভিন্ন strategy থাকতে পারে:
+
+Round Robin
+Request 1 → Instance-1
+Request 2 → Instance-2
+Request 3 → Instance-3
+Request 4 → Instance-1
+Random
+
+Randomly একটি healthy instance নির্বাচন করা হয়।
+
+Least Connections
+
+যে instance-এ active connection কম, সেটিকে নির্বাচন করা হতে পারে।
+
+অন্যান্য routing rule
+
+Metadata ব্যবহার করে:
+
+region
+zone
+version
+
+এর ভিত্তিতেও selection করা যেতে পারে।
+
+গুরুত্বপূর্ণ distinction
+
+Service Discovery এবং Load Balancing একই জিনিস নয়।
+
+Service Discovery-এর কাজ:
+
+"কোন instance-গুলো available?"
+
+Load Balancing-এর কাজ:
+
+"Available instance-গুলোর মধ্যে কোনটিতে request পাঠানো হবে?"
+
+তবে অনেক modern architecture-এ discovery এবং load balancing একসাথে integrated হতে পারে।
+
+11. Failure Detection
+
+Service instance কখন failure করেছে—এটি detect করাও গুরুত্বপূর্ণ।
+
+ধরা যাক:
+
+payment-service
+     │
+     ├── Instance-1 ✓
+     ├── Instance-2 ✓
+     └── Instance-3 ✗
+
+Instance-3 crash করেছে।
+
+কিন্তু Registry যদি এখনও মনে করে:
+
+Instance-3 = available
+
+তাহলে traffic সেখানে পাঠানো হতে পারে।
+
+Failure Detection এই সমস্যা detect করে।
+
+সাধারণ mechanism:
+
+Health Check
+     ↓
+Failure detected
+     ↓
+Instance marked unhealthy
+     ↓
+Instance removed/excluded from discovery
+
+এতে নতুন request healthy instance-গুলোর দিকে যায়।
+
+12. Registry Consistency & Availability
+
+Production environment-এ Service Registry নিজেই একটি critical component।
+
+কারণ:
+
+সব service যদি Registry-এর উপর নির্ভর করে
+              ↓
+Registry unavailable হলে
+              ↓
+Discovery সমস্যা হতে পারে
+
+তাই Registry সাধারণত highly available এবং distributed architecture-এ চালানো হয়।
+
+উদাহরণ:
+
+              Service Registry Cluster
+
+        ┌──────────────┐
+        │ Registry Node│
+        │      A       │
+        └──────────────┘
+               │
+        ┌──────────────┐
+        │ Registry Node│
+        │      B       │
+        └──────────────┘
+               │
+        ┌──────────────┐
+        │ Registry Node│
+        │      C       │
+        └──────────────┘
+
+এখানে consistency গুরুত্বপূর্ণ।
+
+একটি node-এ যদি:
+
+payment-service
+10.0.2.10
+
+থাকে, অন্য node-গুলোর view-ও architecture-এর consistency model অনুযায়ী সামঞ্জস্যপূর্ণ হওয়া দরকার।
+
+Distributed Service Discovery system-এ এই বিষয়টি অত্যন্ত গুরুত্বপূর্ণ, কারণ Registry-এর stale বা inconsistent information থেকে ভুল routing হতে পারে।
+
+
+
+-> Service Discovery Flow
+1. Payment Service instance starts
+              ↓
+2. Instance registers itself
+              ↓
+3. Registry stores its Address
+              ↓
+4. Health checking starts
+              ↓
+5. Order Service needs Payment Service
+              ↓
+6. Order Service performs service lookup
+              ↓
+7. Registry returns healthy instances
+              ↓
+8. Order Service selects an instance
+              ↓
+9. Request goes to Payment Service
+              ↓
+10. Instance fails হলে health check detects it
+              ↓
+11. Failed instance discovery result থেকে বাদ পড়ে
+

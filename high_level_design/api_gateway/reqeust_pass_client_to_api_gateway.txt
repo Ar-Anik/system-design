@@ -1,0 +1,47 @@
+Q : Internet থেকে API Gateway পর্যন্ত Request কীভাবে পৌঁছায়?
+ধরা যাক Client এই API call করছে: GET https://api.company.com/orders/101
+
+এখানে https হলো protocol/scheme।
+
+api.company.com হলো hostname/domain।
+
+/orders/101 হলো API path।
+
+Client যখন এই URL ব্যবহার করে Request পাঠায়, তখন প্রথমে এই hostname-এর জন্য DNS resolution প্রয়োজন হয়।
+ধরা যাক DNS response এমন একটি public IP Address প্রদান করল:
+        api.company.com
+                ↓
+        203.0.113.10
+
+যদি URL হয়: https://api.company.com/orders/101
+এবং :port explicitly দেওয়া না থাকে, তাহলে Client https scheme-এর জন্য default port 443 ব্যবহার করে।
+
+অর্থাৎ: https://api.company.com/orders/101 কে conceptualভাবে এমনভাবে ভাবা যায়:
+      https://api.company.com:443/orders/101
+
+একইভাবে: http://api.company.com/orders/101 এর default port হলো: 80 অর্থাৎ:
+      http://api.company.com/orders/101
+
+conceptually: http://api.company.com:80/orders/101
+
+তাই URL-এ :443 না থাকলেও বুঝতে পারে যে HTTPS-এর জন্য destination port 443। এরপর network routing-এর মাধ্যমে Request সেই public endpoint-এর দিকে যায়।
+
+বাস্তব production environment-এ 203.0.113.10 সরাসরি Gateway machine-এর IP নাও হতে পারে। এর সামনে থাকতে পারে:
+
+        DNS
+         ↓
+        CDN / WAF
+         ↓
+        Cloud Load Balancer
+         ↓
+        API Gateway
+
+অথবা:
+
+        DNS
+         ↓
+        Load Balancer
+         ↓
+        API Gateway instances
+
+অর্থাৎ api.company.com থেকে শেষ পর্যন্ত Gateway software-এ পৌঁছানোর architecture deployment অনুযায়ী পরিবর্তিত হতে পারে।

@@ -1,0 +1,105 @@
+Q : API Gateway কী?
+API Gateway হলো একটি server-side software component যা Client এবং এক বা একাধিক backend service-এর মাঝখানে অবস্থান করে এবং Client-এর incoming API Request-এর জন্য একটি central entry point প্রদান করে।
+
+একটি Microservices system-এ সাধারণত অনেকগুলো service থাকে:
+- User Service
+- Order Service
+- Payment Service
+- Inventory Service
+- Notification Service
+
+প্রতিটি service আলাদা application হিসেবে run করতে পারে। প্রতিটি service-এর নিজস্ব port, network Address এবং internal endpoint থাকতে পারে।
+কিন্তু Client-কে সাধারণত এই প্রতিটি service-এর internal Address জানতে দেওয়া হয় না। তার পরিবর্তে architecture এমন হতে পারে :
+
+                         Internet
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │    Client    │
+                     │ Mobile / Web │
+                     └──────┬───────┘
+                            │
+                            │ HTTPS
+                            ▼
+                  ┌─────────────────────┐
+                  │    API Gateway      │
+                  │                     │
+                  │ Authentication      │
+                  │ Routing             │
+                  │ Rate Limiting       │
+                  │ Logging             │
+                  │ Caching             │
+                  │ Load Balancing      │
+                  └──────────┬──────────┘
+                             │
+             ┌───────────────┼────────────────┐
+             │               │                │
+             ▼               ▼                ▼
+       ┌──────────┐    ┌──────────┐    ┌────────────┐
+       │   User   │    │  Order   │    │  Payment   │
+       │ Service  │    │ Service  │    │  Service   │
+       └──────────┘    └──────────┘    └────────────┘
+
+এখানে সবচেয়ে গুরুত্বপূর্ণ বিষয় হলো:
+Client-এর perspective থেকে backend-এর অনেকগুলো service-এর পরিবর্তে একটি central API entry point দেখা যায়।
+
+উদাহরণ: https://api.company.com
+
+এর মাধ্যমে বিভিন্ন API expose করা যেতে পারে:
+GET    https://api.company.com/users/123
+GET    https://api.company.com/orders/5001
+POST   https://api.company.com/payments
+GET    https://api.company.com/products
+
+Client-এর Request প্রথমে Gateway-তে আসে। Gateway Request-এর বিভিন্ন অংশ—যেমন HTTP method, path, headers, authentication information ইত্যাদি দেখে সিদ্ধান্ত নেয় Request কোন backend service-এ পাঠানো হবে।
+
+
+-> একটি বড় corporate building কল্পনা করা যাক।
+
+Building-এর ভিতরে বিভিন্ন department রয়েছে:
+- Accounts Department
+- Order Department
+- Payment Department
+- HR Department
+- Inventory Department
+
+Building-এর ভিতরের প্রতিটি department-এর আলাদা room আছে। কিন্তু বাইরের visitor-কে প্রতিটি room-এ সরাসরি প্রবেশ করতে দেওয়া হয় না।
+Building-এর সামনে একটি main reception আছে। Visitor প্রথমে reception-এ যায়।
+
+Reception visitor-এর request শুনে: “কোন department-এ যেতে হবে?”
+
+তারপর visitor-কে সরাসরি ঐ department-এর কাছে পাঠাতে পারে অথবা department থেকে information এনে দিতে পারে।
+
+Microservices architecture-এ একই ধারণাটি এমন:
+Visitor
+   │
+   ▼
+Reception
+   │
+   ├──► User Service
+   ├──► Order Service
+   ├──► Payment Service
+   └──► Inventory Service
+
+এখানে:
+Visitor       = Client
+Reception     = API Gateway
+Departments   = Microservices
+Building      = Backend System
+
+তবে analogy-টির একটি গুরুত্বপূর্ণ limitation আছে। API Gateway শুধু “receptionist” নয়।
+এটি আরও অনেক কাজ করতে পারে:
+- Authentication
+- Authorization
+- Routing
+- Rate Limiting
+- Load Balancing
+- Caching
+- Request Transformation
+- Response Transformation
+- Protocol Translation
+- Observability
+- Circuit Breaking
+- API Composition
+
+কোন feature ব্যবহার করা হবে, তা Gateway technology এবং architecture-এর উপর নির্ভর করে।

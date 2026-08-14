@@ -1,0 +1,363 @@
+Service Discovery-তে কোনো service instance Registry-তে register করার পর Registry-কে কোনোভাবে বুঝতে হবে যে registration-টি এখনও active কি না।
+
+ধরা যাক:
+┌─────────────────────────────────────┐
+│ payment-service                     │
+│ Address: 10.0.1.25:8002             │
+└─────────────────────────────────────┘
+
+এই instance Registry-তে register করল:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│          │                          │
+│          │ Register                 │
+│          ▼                          │
+│ Service Registry                    │
+│                                     │
+│ payment-service                     │
+│ 10.0.1.25:8002                      │
+└─────────────────────────────────────┘
+
+এখন Registry-তে registration তৈরি হয়েছে। কিন্তু কিছু সময় পরে যদি Payment Service crash করে, Registry কীভাবে বুঝবে যে এই instance আর চলছে না?
+এই সমস্যা সমাধানের একটি উপায় হলো Heartbeat / Lease Renewal
+
+২. Heartbeat বলতে কী বোঝায়?
+Heartbeat হলো একটি periodic signal, যার মাধ্যমে একটি service instance জানায় যে সেটি এখনও active এবং Registry-এর সঙ্গে তার registration বজায় রাখতে চায়।
+
+সহজভাবে:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│                                     │
+│ "I am still active."                │
+│                                     │
+│          │ Heartbeat                │
+│          ▼                          │
+│ Service Registry                    │
+└─────────────────────────────────────┘
+
+এখানে "I am still active" একটি conceptual meaning। বাস্তবে heartbeat একটি নির্দিষ্ট API request, RPC call বা protocol message হতে পারে।
+
+
+৩. Lease Renewal কী?
+Lease হলো Registry-এর দেওয়া একটি সময়-সীমাবদ্ধ validity period।
+
+ধরা যাক:
+┌─────────────────────────────────────┐
+│ Lease Duration = 30 seconds         │
+└─────────────────────────────────────┘
+
+অর্থাৎ registration অনির্দিষ্টকাল valid থাকবে না। Payment Service-কে নির্দিষ্ট সময়ের মধ্যে lease renew করতে হবে।
+
+যেমন:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│                                     │
+│ Register                            │
+│      ↓                              │
+│ Lease = 30 seconds                  │
+└─────────────────────────────────────┘
+
+Payment Service 10 seconds পরে renewal পাঠাল:
+┌──────────────────────────────────┐
+│    Payment Service               │
+│          │                       │
+│          │ Lease Renewal         │
+│          ▼                       │
+│      Registry                    │
+│          │                       │
+│          ▼                       │
+│    Lease renewed                 │
+└──────────────────────────────────┘
+
+Registry আবার নতুন expiration time ধরে রাখে। অর্থাৎ:
+┌─────────────────────────────────────┐
+│ Lease                               │
+│                                     │
+│ Register                            │
+│    ↓                                │
+│ 30 sec validity                     │
+│    ↓                                │
+│ Renewal received                    │
+│    ↓                                │
+│ 30 sec validity আবার শুরু/বাড়ে        │
+└─────────────────────────────────────┘
+
+সুতরাং Lease Renewal বলতে বোঝায়:
+    Service instance-এর existing lease-এর validity আবার বাড়ানোর জন্য Registry-কে renewal পাঠানো।
+
+
+-> Heartbeat এবং Lease Renewal দুটিকে অনেক context-এ কাছাকাছি অর্থে ব্যবহার করা হয়, কিন্তু conceptually সামান্য পার্থক্য আছে।
+
+- Heartbeat মূলত periodic liveness signal।
+- Lease Renewal মূলত একটি lease-এর validity বজায় রাখার action।
+
+তাই:
+┌─────────────────────────────────────┐
+│ Heartbeat                           │
+│ "I am still here / active."         │
+│                                     │
+│ Lease Renewal                       │
+│ "Keep my registration valid."       │
+└─────────────────────────────────────┘
+
+একটি system-এ একই periodic request একই সঙ্গে heartbeat এবং lease renewal-এর কাজ করতে পারে।
+তাই Service Discovery discussion-এ Heartbeat / Lease Renewal Writing together is very common.
+
+
+
+এখন সম্পূর্ণ lifecycle দেখা যাক। ধরা যাক:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│ Address: 10.0.1.25:8002             │
+│                                     │
+│ Lease Duration = 30 seconds         │
+│ Renewal Interval = 10 seconds       │
+└─────────────────────────────────────┘
+
+প্রথমে service Registry-তে register করে:
+┌─────────────────────────────────────┐
+│    Payment Service                  │
+│          │                          │
+│          │ Register                 │
+│          ▼                          │
+│       Registry                      │
+│                                     │
+│ payment-service                     │
+│ 10.0.1.25:8002                      │
+│                                     │
+│ Lease = 30 seconds                  │
+└─────────────────────────────────────┘
+
+তারপর 10 seconds পরে:
+┌─────────────────────────────────────┐
+│    Payment Service                  │
+│          │                          │
+│          │ Lease Renewal            │
+│          ▼                          │
+│      Registry                       │
+│          │                          │
+│          ▼                          │
+│  Lease remains valid                │
+└─────────────────────────────────────┘
+
+আবার 10 seconds পরে:
+┌─────────────────────────────────────┐
+│    Payment Service                  │
+│          │                          │
+│          │ Lease Renewal            │
+│          ▼                          │
+│      Registry                       │
+│          │                          │
+│          ▼                          │
+│    Lease remains valid              │
+└─────────────────────────────────────┘
+
+এভাবে চলতে থাকে:
+┌─────────────────────────────────────┐
+│ Register                            │
+│    ↓                                │
+│ Lease Renewal                       │
+│    ↓                                │
+│ Lease Renewal                       │
+│    ↓                                │
+│ Lease Renewal                       │
+│    ↓                                │
+│ Lease Renewal                       │
+│    ↓                                │
+│ ...                                 │
+└─────────────────────────────────────┘
+
+
+এবার Payment Service হঠাৎ crash করল।
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│                                     │
+│       X                             │
+│     CRASH                           │
+└─────────────────────────────────────┘
+
+Crash করার পর service আর lease renewal পাঠাতে পারবে না।
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│          X                          │
+│       CRASH                         │
+│                                     │
+│ No Lease Renewal                    │
+│          ↓                          │
+│ Registry receives nothing           │
+└─────────────────────────────────────┘
+
+Registry অপেক্ষা করতে থাকে। শেষ renewal-এর পর lease-এর validity শেষ হলে:
+┌─────────────────────────────────────┐
+│ No Renewal                          │
+│      ↓                              │
+│ Lease expires                       │
+│      ↓                              │
+│ Registration becomes invalid        │
+│      ↓                              │
+│ Instance removed / ignored          │
+│      ↓                              │
+│ Discovery result থেকে বাদ             │
+└─────────────────────────────────────┘
+
+এটাই Lease-এর মূল ধারণা।
+
+
+Q : Why is Health Check needed again if there is a heartbeat?
+
+ধরা যাক Payment Service heartbeat পাঠাচ্ছে:
+┌─────────────────────────────────────┐
+│    Payment Service                  │
+│          │                          │
+│          │ Heartbeat                │
+│          ▼                          │
+│      Registry                       │
+│                                     │
+│ "Renewal received."                 │
+└─────────────────────────────────────┘
+
+Registry জানল, Payment Service এখনও Registry-এর সঙ্গে যোগাযোগ করছে। কিন্তু এখান থেকে কি Registry নিশ্চিতভাবে বলতে পারে,
+Q : Payment Service বর্তমানে payment request process করার জন্য healthy?
+-> না।
+
+কারণ heartbeat এবং health check-এর প্রশ্ন আলাদা।
+
+
+Heartbeat / Lease Renewal মূলত এই ধরনের প্রশ্নের উত্তর দেয়:
+┌─────────────────────────────────────┐
+│ Heartbeat / Lease Renewal           │
+│                                     │
+│ "Instance কি এখনও Registry-এর       │
+│  সঙ্গে যোগাযোগ করছে এবং                 │
+│  registration বজায় রাখছে?"           │
+└─────────────────────────────────────┘
+
+অর্থাৎ:
+┌─────────────────────────────────────┐
+│    Instance                         │
+│       │                             │
+│       │ Renewal                     │
+│       ▼                             │
+│   Registry                          │
+│                                     │
+│ Renewal received                    │
+│        ↓                            │
+│ Lease remains valid                 │
+└─────────────────────────────────────┘
+
+এখানে Registry মূলত renewal signal পাচ্ছে।
+
+
+Health Check-এর প্রশ্ন আলাদা:
+┌─────────────────────────────────────┐
+│ Health Check                        │
+│                                     │
+│ "Instance কি বর্তমানে healthy          │
+│  এবং request serve করার জন্য          │
+│  ready?"                            │
+└─────────────────────────────────────┘
+
+এখানে Registry instance-কে পরীক্ষা করতে পারে:
+┌─────────────────────────────────────┐
+│ Registry                            │
+│      │                              │
+│      │ GET /health                  │
+│      ▼                              │
+│ Payment Service                     │
+│      │                              │
+│      │ 200 OK                       │
+│      ▼                              │
+│ Registry                            │
+│      │                              │
+│      ▼                              │
+│ Healthy / Ready                     │
+└─────────────────────────────────────┘
+
+ধরা যাক Payment Service-এর process এখনও চলছে:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│                                     │
+│ Process = Running                   │
+│                                     │
+│ Heartbeat = Working                 │
+└─────────────────────────────────────┘
+
+তাই service Registry-কে heartbeat পাঠাতে পারছে। কিন্তু Payment Service-এর database connection নষ্ট হয়েছে:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│          │                          │
+│          X                          │
+│       Database                      │
+│       Unavailable                   │
+└─────────────────────────────────────┘
+
+
+Payment Service এখনও heartbeat পাঠাতে পারে:
+┌─────────────────────────────────────┐
+│ Payment Service                     │
+│          │                          │
+│          │ Heartbeat                │
+│          ▼                          │
+│     Registry                        │
+│          │                          │
+│          ▼                          │
+│ Lease remains valid                 │
+└─────────────────────────────────────┘
+
+কিন্তু actual payment request process করতে গেলে database দরকার:
+┌─────────────────────────────────────┐
+│   Payment Request                   │
+│          ↓                          │
+│   Payment Service                   │
+│          ↓                          │
+│      Database                       │
+│          X                          │
+│       FAILED                        │
+│          ↓                          │
+│ Request cannot be processed         │
+└─────────────────────────────────────┘
+
+অর্থাৎ:
+┌─────────────────────────────────────┐
+│ Heartbeat = SUCCESS                 │
+│                                     │
+│ কিন্তু                                  │
+│                                     │
+│ Application Health = BAD            │
+└─────────────────────────────────────┘
+
+এই কারণেই heartbeat একা application health-এর complete proof নয়।
+
+
+Registry health endpoint call করতে পারে:
+┌─────────────────────────────────────┐
+│ Registry                            │
+│      │                              │
+│      │ GET /health                  │
+│      ▼                              │
+│ Payment Service                     │
+└─────────────────────────────────────┘
+
+Health endpoint যদি critical dependency পরীক্ষা করে:
+┌─────────────────────────────────────┐
+│ /health                             │
+│                                     │
+│ Application → OK                    │
+│ Database → FAILED                   │
+│                                     │
+│ Result → Unhealthy                  │
+└─────────────────────────────────────┘
+
+তখন Registry বুঝতে পারে:
+┌─────────────────────────────────────┐
+│ Instance                            │
+│                                     │
+│ Heartbeat → Active                  │
+│ Health Check → Failed               │
+│                                     │
+│ Therefore:                          │
+│ Instance should not receive         │
+│ traffic according to policy         │
+└─────────────────────────────────────┘
+
+এখানেই দুটির মূল difference।

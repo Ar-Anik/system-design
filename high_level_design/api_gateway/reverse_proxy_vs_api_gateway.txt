@@ -1,0 +1,271 @@
+1. Reverse Proxy
+"Proxy" শব্দের অর্থ হলো — অন্য কারও হয়ে কাজ করা (Acting on behalf of someone else)।
+
+বাস্তব জীবনের একটি উদাহরণ দেখা যাক। ধরা যাক একটি কোম্পানির CEO-এর সাথে সরাসরি দেখা করা যায় না।
+যদি কারও CEO-এর সাথে যোগাযোগ করার প্রয়োজন হয়, তাহলে সাধারণত প্রথমে Reception Desk বা Personal Assistant-এর সাথে কথা বলতে হয়। Flowটি এমন—
+
+    Visitor
+       │
+       ▼
+  Reception Desk
+       │
+       ▼
+      CEO
+
+Visitor সরাসরি CEO-এর সাথে কথা বলছে না। Reception Desk প্রথমে Request গ্রহণ করছে। তারপর সিদ্ধান্ত নিচ্ছে—
+- এই Visitor-এর Appointment আছে কি?
+- Visitor কোন Department-এর জন্য এসেছে?
+- Visitor-এর পরিচয় Valid কি?
+- Visitor-কে ভিতরে যেতে দেওয়া হবে কি না?
+
+যদি সবকিছু ঠিক থাকে, তখন Visitor-এর Request CEO-এর কাছে Forward করা হয়। এখানে Reception Desk নিজে CEO নয়। আবার Visitor-ও CEO-এর সাথে সরাসরি যোগাযোগ করছে না।
+Reception Desk কেবল মাঝখানে থেকে অন্যের হয়ে যোগাযোগ পরিচালনা করছে। এই "মাঝখানে থেকে অন্যের হয়ে কাজ করা" ধারণাটিই Proxy-এর মূল ধারণা।
+
+Computer Network-এও একই ধারণা প্রযোজ্য। একটি Proxy Server হলো এমন একটি Server যে Client এবং অন্য Server-এর মাঝখানে অবস্থান করে।
+
+     Client
+       │
+       ▼
+     Proxy
+       │
+       ▼
+     Server
+
+এখানে Client Server-এর সাথে সরাসরি কথা বলছে না। Client প্রথমে Proxy-এর সাথে কথা বলছে। তারপর Proxy Server-এর সাথে যোগাযোগ করছে।
+
+Proxy মূলত দুই ধরনের হয়।
+    1. Forward Proxy
+    2. Reverse Proxy
+
+-> Forward Proxy
+Forward Proxy Client-এর হয়ে কাজ করে। অর্থাৎ Forward Proxy-এর মূল দায়িত্ব হলো Client-কে Represent করা। Architecture —
+     Client
+       │
+       ▼
+  Forward Proxy
+       │
+       ▼
+    Internet
+       │
+       ▼
+     Server
+
+এখানে Server জানেই না আসল Client কে। Server শুধু Forward Proxy-কে দেখে। অর্থাৎ Forward Proxy Server-এর কাছে Client-এর পরিচয় লুকিয়ে রাখে।
+
+ধরা যাক, একটি অফিসে সব Employee Internet ব্যবহার করছে। কিন্তু কোম্পানির Policy অনুযায়ী—
+Facebook Block
+YouTube Block
+Torrent Block
+
+সব Employee-এর Computer থেকে request সরাসরি Internet-এ যাচ্ছে না। প্রথমে যাচ্ছে কোম্পানির Proxy Server-এ।
+
+   Employee
+     ↓
+ Forward Proxy
+     ↓
+  Internet
+
+এখন Proxy সিদ্ধান্ত নিচ্ছে—
+এই Website Allow হবে?
+নাকি Block হবে?
+
+অর্থাৎ Forward Proxy মূলত Client Side-এর প্রতিনিধি।
+
+-> Reverse Proxy
+Reverse Proxy সম্পূর্ণ উল্টোভাবে কাজ করে। Reverse Proxy Client-এর প্রতিনিধি নয়। Reverse Proxy Server-এর প্রতিনিধি। Architecture—
+
+     Client
+       │
+       ▼
+  Reverse Proxy
+       │
+       ▼
+  Backend Server
+
+এখানে Client জানেই না Backend Server কোথায় আছে। Client শুধু Reverse Proxy-এর Address জানে।
+
+ধরা যাক, একটি কোম্পানির Website আছে : example.com
+
+Website-এর পিছনে তিনটি Web Server চলছে।
+- Server A
+- Server B
+- Server C
+
+কিন্তু Client এগুলোর কোনো Address জানে না। Client শুধু জানে — https://example.com
+এই Domain আসলে Reverse Proxy-এর দিকে Point করছে। Flow —
+
+  Client
+    ↓
+  Reverse Proxy
+    ↓
+  Server A
+
+অথবা—
+
+  Client
+    ↓
+  Reverse Proxy
+    ↓
+  Server B
+
+অথবা—
+
+  Client
+    ↓
+  Reverse Proxy
+    ↓
+  Server C
+
+Client কখনো বুঝতেই পারে না কোন Server Request Handle করেছে।
+
+
+Q : Why Need Reverse Proxy?
+
+1. Backend Server Hide রাখা
+ধরা যাক, Backend Server-এর IP হলো : 10.0.1.15
+এটি একটি Private Network-এর Server। যদি Client সরাসরি এই Server-এর সাথে connection করে তাহলে—
+    - Server-এর IP প্রকাশ পাবে।
+    - Infrastructure প্রকাশ পাবে।
+    - সরাসরি Attack করা সহজ হবে।
+    - Server পরিবর্তন করলে Client ভেঙে যাবে।
+
+Reverse Proxy এই সমস্যার সমাধান করে। Client শুধু দেখে api.example.com কিন্তু Backend-এ কী আছে তা Client জানে না। এটিকে Backend Abstraction বলা হয়।
+
+
+2. একাধিক Server ব্যবহার করা
+ধরা যাক, একটি Server প্রতি সেকেন্ডে ৫,০০০ Request Handle করতে পারে। কিন্তু হঠাৎ Traffic বেড়ে প্রতি সেকেন্ডে ৩০,০০০ Request হয়ে গেল। একটি Server যথেষ্ট নয়।
+তাই আরও Server instance যোগ করা হলো।
+- Server 1
+- Server 2
+- Server 3
+- Server 4
+
+এখন প্রশ্ন Client কোন Server-এ Request পাঠাবে? Client যদি নিজেই সিদ্ধান্ত নেয় তাহলে—
+- Client-কে সব Server-এর Address জানতে হবে।
+- কোন Server Busy তা জানতে হবে।
+- কোন Server Down তা জানতে হবে।
+
+এটি Client-এর কাজ নয়। Reverse Proxy এই কাজটি করে।
+
+      Client
+        ↓
+   Reverse Proxy
+        ↓
+     Server 1
+     Server 2
+     Server 3
+     Server 4
+
+Reverse Proxy Load Balancing Algorithm (যেমন Round Robin, Least Connections, Weighted Round Robin) ব্যবহার করে কোন Server-এ Request যাবে তা নির্ধারণ করতে পারে।
+
+
+3. Server পরিবর্তন করা সহজ
+ধরা যাক, আজ Backend-এ আছে — Server A
+
+আগামী সপ্তাহে নতুন Version Deploy করা হলো — Server B
+
+Client কিছুই জানে না। কারণ Client শুধু Reverse Proxy-তে Request পাঠাচ্ছে। Reverse Proxy এর জন্য Client-এর কোনো পরিবর্তন দরকার হয় না।
+
+
+4. SSL/TLS Termination (Secure Sockets Layer(SSL) and Transport Layer Security(TLS)
+HTTPS Connection Establish করা CPU-এর জন্য তুলনামূলক ব্যয়বহুল। অনেক Architecture-এ HTTPS Connection প্রথমে Reverse Proxy-তে Terminate করা হয়।
+এরপর Reverse Proxy Backend-এর সাথে HTTP অথবা HTTPS—যেটি Architecture অনুযায়ী নির্ধারিত—ব্যবহার করে যোগাযোগ করতে পারে।
+
+Impornet : Backend-এ HTTP ব্যবহার করা বাধ্যতামূলক নয়। Internal Network-এর Security Requirement অনুযায়ী Backend-এও HTTPS or mTLS ব্যবহার করা হতে পারে।
+
+
+5. Static File Serving
+
+ধরা যাক একটি Website-এ রয়েছে—
+- Image
+- CSS
+- JavaScript
+- Font
+
+এই File-গুলোর জন্য Application Server ব্যবহার করা সবসময় কার্যকর নয়। Reverse Proxy (যেমন Nginx) সরাসরি Static File Serve করতে পারে।
+ফলে Application Server Business Logic-এ মনোযোগ দিতে পারে।
+
+
+-> ধরা যাক, Client Request পাঠালো—
+GET /orders/1001
+Host: api.example.com
+
+Reverse Proxy সাধারণত নিচের ধাপগুলো অনুসরণ করে:
+
+- Step-1
+Request গ্রহণ করে।
+
+- Step-3
+Host Header, Path, Method বা Configuration অনুযায়ী Routing Rule পরীক্ষা করে।
+
+- Step-3
+কোন Backend Server-এ Request যাবে তা নির্ধারণ করে।
+
+- Step-4
+প্রয়োজনে Request Header যোগ, পরিবর্তন বা Forward করে (যেমন X-Forwarded-For, X-Forwarded-Proto)।
+
+- Step-5
+Backend Server-এ Request পাঠায়।
+
+- Step-6
+Backend-এর Response গ্রহণ করে।
+
+- Step-7
+Response Client-এর কাছে Forward করে।
+
+Reverse Proxy সাধারণত Business Data পরিবর্তন করে না। এর মূল কাজ হলো নিরাপদ ও কার্যকরভাবে Request এবং Response Forward করা।
+
+
+API Gateway অবশ্যই Reverse Proxy-এর মতো Request Forward করে। কিন্তু API Gateway-এর কাজ শুধুমাত্র Forward করা নয়।
+এটি Microservices Architecture-এর জন্য একটি Application-aware Entry Point। অর্থাৎ এটি শুধু Network Layer দেখে না, API Policy-ও পরিচালনা করে।
+
+ধরা যাক একটি Request API Gateway-এ এলো।
+
+    Client
+       │
+       ▼
+    API Gateway
+       │
+       ▼
+    Order Service
+
+Request Forward করার আগে Gateway আরও অনেক কাজ করতে পারে। যেমন—
+
+Authentication (যেমন JWT Signature যাচাই)
+Authorization Policy প্রয়োগ
+Rate Limiting
+API Key Validation
+Request Size Validation
+CORS Policy
+Request/Response Transformation
+API Version Routing
+Canary বা Blue-Green Routing
+Centralized Logging
+Metrics সংগ্রহ
+Distributed Tracing-এর জন্য Correlation ID যুক্ত করা
+Retry ও Timeout Policy
+Circuit Breaker (কিছু Gateway-এ Built-in, কিছু ক্ষেত্রে Upstream Proxy বা Service Mesh-এর মাধ্যমে)
+
+অর্থাৎ Reverse Proxy-এর উপর অনেক Layer যোগ হয়েছে। এই অতিরিক্ত Layer-গুলোর সমষ্টিই API Gateway-কে আরও শক্তিশালী করে।
+
+
+Architecture :
+                 API Gateway
+
+     ┌───────────────────────────────────────┐
+     │ Authentication                        │
+     │ Authorization                         │
+     │ Rate Limiting                         │
+     │ Request Validation                    │
+     │ Request Transformation                │
+     │ Response Transformation               │
+     │ API Version Routing                   │
+     │ Metrics                               │
+     │ Logging                               │
+     │ Distributed Tracing                   │
+     │ Retry / Timeout Policies              │
+     │                                       │
+     │    Reverse Proxy (Core Foundation)    │
+     └───────────────────────────────────────┘
+
+Reverse Proxy হলো ভিত্তি। API Gateway সেই ভিত্তির উপর নির্মিত একটি উচ্চস্তরের Platform।

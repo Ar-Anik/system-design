@@ -1,0 +1,53 @@
+1. Log কীভাবে Generate হয়?
+Microservices Architecture-এ log সরাসরি Application থেকে generate হয়। যখন Application-এর ভেতরে কোনো event ঘটে—যেমন Database Transaction সম্পন্ন হওয়া
+Input Validation ব্যর্থ হওয়া, বা নতুন কোনো Trigger কাজ করা—তখন Application নির্দিষ্ট event-এর data record করে।
+
+- Format: Log তৈরি করার সময় plain Text-এর পরিবর্তে JSON format ব্যবহার করা স্ট্যান্ডার্ড। JSON Object হিসেবে log generate হলে পরবর্তীতে নির্দিষ্ট field ধরে Search করা অনেক সহজ হয়।
+
+- Process: Code-এর মাধ্যমে logger Define করা থাকে। যখনই নির্দিষ্ট Command বা Function Execute হয়, তখন logger Background-এ log information Write করে।
+
+
+2. কোথা থেকে Collect হয়?
+Production পরিবেশে Microservices সাধারণত Docker Container হিসেবে Operate করে।
+
+- Source: Application তার log সাধারণত Standard Output (stdout) বা নির্দিষ্ট File-এ Write করে।
+
+- Collector Role: প্রতিটি Server বা Node-এ একটি Log Shipper (যেমন: Filebeat বা Fluent Bit) Install করা থাকে। এই Shipper-গুলো Background Process হিসেবে run করে এবং
+Automatic-ভাবে Container-এর stdout বা File থেকে log data Collect করে।
+
+
+3. কীভাবে Transport হয়?
+Collect করা log সরাসরি Storage Engine-এ না পাঠিয়ে একটি মধ্যবর্তী স্তরের মাধ্যমে Transport করা হয়।
+
+- Message Broker: Data transport করার জন্য Apache Kafka বা RabbitMQ-এর মতো Message Broker ব্যবহার করা হয়।
+
+- Why Broker: প্রচুর রিকোয়েস্টের চাপে System যেন Overload না হয়, তাই Broker একটি Buffer হিসেবে কাজ করে। Log Shipper Network Communication-এর মাধ্যমে Message Broker-এ Data পাঠায়।
+
+
+4. কীভাবে Parse এবং Index হয়?
+- Parsing: Log Aggregator (যেমন: Logstash বা Fluentd) Message Broker থেকে log Receive করে। এটি Raw Data-কে Parse করে। অপ্রয়োজনীয় Property বাদ দিয়ে প্রয়োজনীয় Data Extract করে একটি Structured Format তৈরি করে।
+
+- Indexing: Parse করা Data Storage Engine (যেমন: Elasticsearch বা OpenSearch)-এ পাঠানো হয়। Storage Engine এই Data-কে Index করে। Indexing-এর ফলে মিলিয়ন মিলিয়ন log-এর মধ্যে অত্যন্ত দ্রুত Search এবং Logic check করা সম্ভব হয়।
+
+
+5. Request-এর Across Services Correlation কীভাবে করা হয়?
+Microservices Architecture-এ একটি মাত্র Request একাধিক Service-এর মধ্য দিয়ে যেতে পারে। সব Service-এর log একসাথে মেলানোর জন্য Correlation ID (বা Trace ID) ব্যবহার করা হয়।
+
+- Entry Point: যখন Request প্রথম System-এ প্রবেশ করে (যেমন: API Gateway-তে), তখন একটি Unique Correlation ID Generate করা হয়।
+
+- Header Propagation: এক Service থেকে অন্য Service-এ Communication-এর সময় HTTP Header-এ (X-Correlation-ID) এই ID যুক্ত করে দেওয়া হয়।
+
+- Log Tagging: প্রতিটি Service তার Internal Processing-এর সময় এই ID Memory-তে রাখে এবং নিজের Generate করা প্রতিটি log-এর সাথে এই ID যুক্ত করে দেয়। ফলে একটি ID দিয়ে Search করলে
+পুরো Sequence পাওয়া যায়।
+
+
+5. Failure হলে কী হয়?
+System-এ Failure Handle করার জন্য Architecture-এ বিশেষ ব্যবস্থা থাকে:
+
+- Storage Failure: Storage Engine down হলে Log Aggregator Data Drop করে না। এটি নিজের Internal Memory বা Dead Letter Queue-তে Data ধরে রাখে।
+
+- Aggregator Failure: Log Aggregator down হলে Message Broker Data-র Retention Policy অনুযায়ী Data Store করে রাখে।
+
+- Broker Failure: Message Broker down হলে Log Shipper তার Local Server Disk বা Memory-তে Data Buffer করে রাখে এবং বারবার Retry Command Execute করতে থাকে।
+
+

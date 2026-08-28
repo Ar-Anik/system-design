@@ -1,0 +1,39 @@
+OpenTelemetry এবং Jaeger ভিত্তিক আধুনিক Distributed Tracing Architecture নিচে প্রদর্শন করা হলো:
+
+    +-----------------------------------------------------------------------+
+    |                         Microservices Cluster                         |
+    |                                                                       |
+    |  +------------------+     HTTP/gRPC Context    +-------------------+  |
+    |  | Order Service    | -----------------------> | Payment Service   |  |
+    |  | (OTel SDK)       |  (W3C Trace Context)     | (OTel SDK)        |  |
+    |  +------------------+                          +-------------------+  |
+    |           |                                              |            |
+    +-----------|----------------------------------------------|------------+
+                | (OTLP via gRPC/HTTP)                         |
+                ▼                                              ▼
+    +-----------------------------------------------------------------------+
+    | OpenTelemetry Collector (Receivers -> Processors -> Exporters)        |
+    +-----------------------------------------------------------------------+
+                                        |
+                                        ▼
+    +-----------------------------------------------------------------------+
+    | Storage Backend (Elasticsearch / Cassandra / Memory / ClickHouse)     |
+    +-----------------------------------------------------------------------+
+                                        |
+                                        ▼
+    +-----------------------------------------------------------------------+
+    | Visualization UI (Jaeger UI / Grafana Tempo / Zipkin)                  |
+    +-----------------------------------------------------------------------+
+
+# OTel SDK -> OpenTelemetry Software Development Kit
+# OTLP -> OpenTelemetry Protocol
+
+- Client / API Layer: Application-এ রিকোয়েস্ট আসার সাথে সাথে OpenTelemetry SDK দ্বারা Root Span ও Trace ID তৈরি হয়।
+
+- In-Process Instrumentation: প্রতিটি মেথড বা ফাংশন কল নতুন Child Span তৈরি করে।
+
+- Cross-Process Propagation: Downstream Service-এ Network Call করার সময় HTTP Header-এ Trace Context Inject করা হয়।
+
+- Data Pipeline (Collector): ব্যাকগ্রাউন্ডে Asynchronous Batching-এর মাধ্যমে Telemetry Data (OTLP Protocol) Collector-এ পাঠানো হয়।
+
+- Storage & UI Layer: Collector থেকে ডাটা Storage-এ সংরক্ষিত হয় এবং UI থেকে Graph বিশ্লেষণ করা যায়।

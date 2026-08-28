@@ -1,0 +1,357 @@
+JWT হলো RFC 7519 অনুসরণকারী একটি নির্দিষ্ট open standard, যার মাধ্যমে Client (যেমন Web বা Mobile Application) এবং Server-এর মধ্যে data আদান-প্রদান করা যায়। এটি
+মূলত একটি digitally signed JSON object। Web Application-এর Security ব্যবস্থায় JWT একটি self-contained token হিসেবে কাজ করতে পারে, অর্থাৎ User-কে শনাক্ত
+করার জন্য প্রয়োজনীয় বিভিন্ন data Token-এর মধ্যে Claims আকারে রাখা যেতে পারে।
+
+একটি JWT String dot (.) চিহ্ন দ্বারা বিভক্ত তিনটি প্রধান অংশ নিয়ে গঠিত:
+1. Header
+Header হলো JWT-এর প্রথম অংশ। এতে Token-এর ধরন এবং Token-এর Signature তৈরি ও যাচাই করার জন্য ব্যবহৃত Cryptographic Algorithm সম্পর্কিত তথ্য থাকে।
+উদাহরণ:
+{
+  "typ": "JWT",
+  "alg": "HS256"
+}
+
+এখানে:
+typ: JWT — Token-এর ধরন JWT।
+alg: HS256 — Signature-এর জন্য HMAC SHA-256 Algorithm ব্যবহার করা হয়েছে।
+
+অর্থাৎ Header Server-কে জানায় JWT-এর Signature কোন Algorithm অনুযায়ী তৈরি হয়েছে।
+
+2. Payload
+Payload হলো JWT-এর দ্বিতীয় অংশ। এখানে বিভিন্ন Claims থাকে। Claims-এর মাধ্যমে User এবং Token সম্পর্কিত তথ্য প্রকাশ করা হয়।
+
+উদাহরণ:
+{
+  "sub": "101",
+  "role": "admin",
+  "exp": 1788000000
+}
+
+এখানে:
+sub — User-এর পরিচয় নির্দেশ করে।
+role — User-এর Role নির্দেশ করে।
+exp — Token-এর Expiration Time নির্দেশ করে।
+
+Payload encrypted নয়। এটি Base64URL Encoding করা থাকে। তাই Payload-এর তথ্য গোপন থাকে না এবং সহজেই Decode করা যায়।
+
+3. Signature
+Signature হলো JWT-এর তৃতীয় এবং Security-এর জন্য সবচেয়ে গুরুত্বপূর্ণ অংশ। এটি Header এবং Payload-এর Integrity এবং Authenticity যাচাই করতে ব্যবহৃত হয়।
+JWT তৈরি করার সময় Server Header এবং Payload-এর Encoded Version-এর ওপর নির্ধারিত Algorithm এবং Cryptographic Key প্রয়োগ করে Signature তৈরি করে।
+
+উদাহরণস্বরূপ, HS256 ব্যবহার করলে ধারণাটি হলো:
+Signature = HMAC-SHA256(
+    Encoded Header + "." + Encoded Payload, Secret Key
+)
+Header-এর algorithm অনুযায়ী নির্ধারিত Algorithm ব্যবহার করে Header এবং Payload-এর encoded representation-এর ওপর Signing Key প্রয়োগ করে Signature তৈরি
+করা হয়। অর্থাৎ HS256-এর ক্ষেত্রে : Encoded Header + Encoded Payload + Secret Key → Signature
+
+এরপর তিনটি অংশ একত্র হয়ে সম্পূর্ণ JWT তৈরি হয়:
+Encoded Header
+      .
+Encoded Payload
+      .
+Signature
+
+
+JWT সম্পর্কিত একটি গুরুত্বপূর্ণ ভুল ধারণা হলো—JWT নিজে থেকেই Data-কে Encrypt বা সম্পূর্ণ গোপন করে। প্রকৃতপক্ষে সাধারণ JWT-এর Header এবং Payload Base64URL Encoding ব্যবহার
+করে প্রকাশ করা হয়; এটি Encryption নয়। ফলে যে কেউ Token-এর Header এবং Payload Decode করে তার ভেতরের data দেখতে পারে। তাই JWT Payload-এর মধ্যে Password বা
+অন্য কোনো অপ্রয়োজনীয় Sensitive Information রাখা উচিত নয়। JWT-এর মূল উদ্দেশ্য Data গোপন করা নয়; বরং Digital Signature-এর মাধ্যমে Token-এর Integrity এবং
+Authenticity নিশ্চিত করা।
+
+
+
+Q : Why was JWT introduced?
+-> আধুনিক Web System-এ User-এর সংখ্যা, Request-এর পরিমাণ এবং System-এর Infrastructure ক্রমশ বড় হওয়ার ফলে একটি Application পরিচালনার জন্য একাধিক Server
+ব্যবহার করা সাধারণ বিষয় হয়ে উঠেছে। বিশেষ করে Cloud Computing, Microservices Architecture, Horizontal Scaling এবং Distributed System-এ একই Application-এর
+Request বিভিন্ন Server এবং Service-এর মধ্যে বিতরণ করা হয়। এই ধরনের পরিবেশে Authentication-এর একটি গুরুত্বপূর্ণ প্রশ্ন হলো:
+
+        User Login করার পর Authentication সম্পর্কিত State কোথায় এবং কীভাবে সংরক্ষিত থাকবে?
+
+এই প্রশ্নটি বোঝার জন্য প্রথমে Stateful Session-based Authentication বোঝা দরকার। Stateful Session Authentication কীভাবে কাজ করে?
+
+ধরা যাক, একটি User Username এবং Password দিয়ে Login করল। Login সফল হলে Server একটি Session তৈরি করল:
+
+    ┌──────────────┐
+    │    Client    │
+    └──────┬───────┘
+           │
+           │ Login
+           ▼
+    ┌──────────────┐
+    │    Server    │
+    └──────┬───────┘
+           │
+           │ Create Session
+           ▼
+    ┌──────────────────────┐
+    │   Session Store      │
+    │                      │
+    │ session_123          │
+    │   ↓                  │
+    │ user_id = 101        │
+    │ role = admin         │
+    │ expires_at = ...     │
+    └──────────────────────┘
+
+Server Client-কে একটি Session ID দেয়। যেমন: session_id = session_123
+
+Browser পরবর্তী Request-এর সাথে সেই Session ID পাঠায়। Server তখন Session Store-এ session_123 খুঁজে User-এর Session Information বের করে:
+
+    session_123
+         ↓
+    user_id = 101
+    role = admin
+    expires_at = ...
+
+তারপর Server Authentication এবং Authorization-এর সিদ্ধান্ত নেয়। এখানে গুরুত্বপূর্ণ বিষয় হলো, Client-এর কাছে থাকা Session ID নিজে User-এর Authentication
+Information বহন করে না। Authentication State Server-side Session Store-এ থাকে। এ কারণেই এই পদ্ধতিকে Stateful Authentication বলা হয়।
+
+
+-> Multi-Server Environment-এ Stateful Session-এর বিষয়টি
+
+একটি ছোট System-এ একটি Server থাকলে Session Management খুব সহজ:
+
+                 ┌──────────────┐
+Client ─────────►│   Server A   │
+                 │              │
+                 │ Session      │
+                 │ Store        │
+                 └──────────────┘
+
+এখানে Login এবং পরবর্তী Request একই Server-এ পৌঁছায়। কিন্তু Traffic বৃদ্ধি পাওয়ার কারণে System-এ একাধিক Server যুক্ত করা হলে Architecture এমন হয়:
+
+                             ┌──────────────┐
+                        ┌───►│   Server A   │
+                        │    └──────────────┘
+                        │
+    ┌──────────┐     ┌──┴───────────┐
+    │  Client  │────►│ Load Balancer│
+    └──────────┘     └──┬───────────┘
+                        │
+                        └───►┌──────────────┐
+                             │   Server B   │
+                             └──────────────┘
+
+এখন একটি গুরুত্বপূর্ণ পরিস্থিতি দেখা দেয়। ধরা যাক Login Request Server A-তে গেল।
+
+    Client
+       │
+       │ Login
+       ▼
+    Server A
+       │
+       └── Session = session_123
+
+এরপর পরবর্তী Request Load Balancer Server B-তে পাঠাল:
+
+    Client
+       │
+       │ session_123
+       ▼
+    Load Balancer
+       │
+       ▼
+    Server B
+
+যদি Session শুধুমাত্র Server A-এর Local Memory-তে থাকে:
+
+    Server A
+    ┌────────────────────┐
+    │ session_123        │
+    │ user_id = 101      │
+    └────────────────────┘
+
+    Server B
+    ┌────────────────────┐
+    │ No session_123     │
+    └────────────────────┘
+
+তাহলে Server B session_123-এর Session Information খুঁজে পাবে না। এখানে Stateful Session নিজে ভুল বা অকার্যকর পদ্ধতি নয়। সমস্যাটি হলো Session State কীভাবে
+একাধিক Server-এর মধ্যে Available থাকবে। এই সমস্যার প্রচলিত সমাধান :
+
+১. Sticky Session
+Load Balancer একই Client-এর Request একই Server-এ পাঠানোর ব্যবস্থা করে।
+
+    Client
+       │
+       ▼
+    Load Balancer
+       │
+       └────────► Server A
+                    │
+                    └── Session
+
+পরবর্তী Request-ও Server A-তে যায়। এতে Local Session কাজ করে। তবে কোনো Server Failure হলে Session Availability-এর সমস্যা দেখা দিতে পারে এবং Load
+Balancer-এর উপর Session Affinity-এর অতিরিক্ত নির্ভরতা তৈরি হয়।
+
+২. Shared Session Store
+আরেকটি পদ্ধতি হলো Session Server-এর Local Memory-তে না রেখে একটি Shared Session Store-এ রাখা।
+
+যেমন Redis বা Database।
+
+                     ┌──────────────┐
+                ┌───►│   Server A   │
+                │    └──────┬───────┘
+                │           │
+┌──────────┐    │           ▼
+│  Client  │───►│      ┌──────────────┐
+└──────────┘    │      │ Redis / DB   │
+                │      │              │
+                │      │ session_123  │
+                │      └──────────────┘
+                │
+                └───►┌──────────────┐
+                     │   Server B   │
+                     └──────────────┘
+
+এখন Request Server A বা Server B—যেখানেই পৌঁছাক, উভয় Server একই Session Store থেকে Session Information পড়ে। এটি Multi-Server Environment-এ
+Stateful Session পরিচালনার একটি প্রচলিত এবং কার্যকর পদ্ধতি।
+
+
+-> JWT এখানে একটি ভিন্ন Design Approach দেয়।
+JWT-based Stateless Authentication-এ Authentication-এর জন্য Server-side Session Store-এর উপর প্রতিটি Request নির্ভর করার পরিবর্তে Token-এর মধ্যে
+প্রয়োজনীয় Claims রাখা হয়।
+
+Login সফল হলে:
+
+          ┌──────────┐
+          │  Client  │
+          └────┬─────┘
+               │
+               │ Login
+               ▼
+        ┌──────────────┐
+        │    Server    │
+        └──────┬───────┘
+               │
+               │ Create JWT
+               ▼
+    ┌───────────────────────────┐
+    │ JWT                       │
+    │                           │
+    │ Header                    │
+    │ Payload                   │
+    │   sub = 101               │
+    │   role = admin            │
+    │   exp = ...               │
+    │ Signature                 │
+    └───────────────────────────┘
+           │
+           ▼
+        Client
+
+Client Login Request পাঠালে Server Authentication যাচাই করে। Login সফল হলে Server একটি JWT তৈরি করে, যার মধ্যে Header, Payload এবং Signature থাকে।
+Payload-এ sub, role এবং exp-এর মতো Claims থাকে। এরপর Server তৈরি করা JWT Client-এর কাছে পাঠায় এবং Client সেটি পরবর্তী Request-এ ব্যবহার করে।
+
+    Client
+       │
+       │ Authorization: Bearer <JWT>
+       ▼
+    Load Balancer
+       │
+       ├────────► Server A
+       │
+       └────────► Server B
+
+JWT তৈরি হওয়ার পর Server-A এবং Server-B-এর মধ্যে JWT Token sync করার প্রয়োজন হয় না।
+
+Login Request Server-A-তে গেলে Server-A JWT তৈরি করে Client-এর কাছে পাঠায়। JWT-এর Signature তৈরি করার জন্য ব্যবহৃত Secret Key অথবা Signing Key-এর প্রয়োজনীয়
+অংশ Server-A এবং Server-B উভয়ের configuration-এ আগে থেকেই সঠিকভাবে সেট করা থাকে।
+
+এরপর Client যখন JWT নিয়ে Server-B-তে Request পাঠায়, Server-B নিজের কাছে থাকা একই Secret Key দিয়ে Signature যাচাই করে। ফলে Server-B Server-A-এর কাছে গিয়ে
+Token বা Session খুঁজে আনে না। উভয় Server স্বাধীনভাবে JWT Validate করতে পারে।
+
+Server A
+   │
+   ├── Signature যাচাই
+   ├── exp যাচাই
+   ├── Claims যাচাই
+   └── Authentication Decision
+
+Server B
+   │
+   ├── Signature যাচাই
+   ├── exp যাচাই
+   ├── Claims যাচাই
+   └── Authentication Decision
+
+এখানে প্রতিটি Server-এর জন্য একটি নির্দিষ্ট User-এর Session আলাদাভাবে Local Memory-তে save করা বাধ্যতামূলক নয়। এই Stateless বৈশিষ্ট্যই JWT-কে Distributed System
+এবং Horizontal Scaling-এর ক্ষেত্রে গুরুত্বপূর্ণ করে।
+
+
+Q : JWT Stateless হলে Server User-এর Authentication Data Server-side save করে না। তাহলে Client থেকে JWT পাওয়ার পর Server Signature Validate করে
+Payload Decode করার পরে Payload-এর User Authentication Data সঠিক এবং বিশ্বাসযোগ্য—এটি কীভাবে নিশ্চিত করে?
+-> Server Payload-কে আলাদা কোনো Database থেকে নিয়ে “সঠিক” প্রমাণ করে না। Signature Validation-ই প্রমাণ করে যে JWT ইস্যু হওয়ার পর Header এবং Payload পরিবর্তন
+করা হয়নি এবং Tokenটি সঠিক Signing Key দিয়ে তৈরি হয়েছে।
+
+1. Login-এর সময় Server JWT তৈরি করে
+ধরা যাক Server-A Login সফল হওয়ার পর এই Payload তৈরি করল:
+{
+  "sub": "101",
+  "role": "admin",
+  "exp": 1788000000
+}
+
+Server-A এই Header এবং Payload-এর উপর Secret Key ব্যবহার করে Signature তৈরি করে। JWT তখন এমন : Header.Payload.Signature
+
+2. Client JWT save করে এবং Server-B-তে পাঠায়
+Client পরবর্তী Request-এ JWT পাঠায়। Server-B প্রথমে JWT-এর Signature Validate করে। Server-B-এর কাছে একই Secret Key থাকলে সে নিজে আবার Header এবং
+Payload থেকে Signature generate করে এবং JWT-এর সঙ্গে থাকা Signature-এর সাথে তুলনা করে। দুটি Signature মিলে গেলে Server-B নিশ্চিত হয়:
+JWT-এর Header এবং Payload issue হওয়ার পর পরিবর্তন করা হয়নি এবং Tokenটি trusted Signing Key ব্যবহার করে তৈরি হয়েছে।
+
+এখানে Signature-এর গুরুত্ব সবচেয়ে বেশি। ধরা যাক Original JWT:
+{
+  "sub": "101",
+  "role": "user"
+}
+
+কেউ JWT-এর Payload পরিবর্তন করে:
+{
+  "sub": "101",
+  "role": "admin"
+}
+করল।
+
+Payload পরিবর্তন হওয়ার সঙ্গে সঙ্গে JWT-এর Header + Payload-এর আর আগের Signature-এর সঙ্গে মিল থাকবে না। Server-B যখন Signature Validate করবে, Validation
+ব্যর্থ হবে। তাই Attacker শুধু Payload Decode করে role পরিবর্তন করলেই Server-B সেটিকে গ্রহণ করবে না।
+
+
+-> Stateless মানে Server User-এর Authentication Data কখনোই save করে না—এমন নয়। Stateless Authentication-এর অর্থ হলো:
+প্রতিটি Request-এর Authentication সিদ্ধান্ত নেওয়ার জন্য Server-side Session State-এর ওপর নির্ভরশীল নয়
+
+Server-B-এর কাছে User-এর Session:
+user_id = 101
+role = admin
+session_id = xyz
+
+এভাবে সংরক্ষিত না থাকলেও Server JWT-এর Signature Validate করে Token-এর Claims-এর ওপর ভিত্তি করে Authentication Decision নিতে পারে।
+
+
+-> JWT কোনো Authentication System-এর সব সমস্যা দূর করে না। বিশেষ করে Token Revocation একটি গুরুত্বপূর্ণ বিষয়। ধরা যাক:
+
+JWT
+exp = 10:00 PM
+
+Token-এর Signature সঠিক এবং exp এখনো পার হয়নি। কিন্তু Security কারণে User-এর Account 8:00 PM-এ Disable করা হলো।
+যদি Authentication System শুধু JWT-এর Signature এবং Expiration যাচাই করে এবং Server-side User Status বা Revocation State যাচাই না করে, তাহলে
+Token 10:00 PM পর্যন্ত Valid হিসেবে বিবেচিত হবে। অর্থাৎ Stateless JWT-এর ক্ষেত্রে:
+
+    Token issued
+         │
+         ▼
+    Token valid
+         │
+         ├── User account disabled
+         │
+         └── Token এখনো expired নয়
+
+এই পরিস্থিতিতে Immediate Revocation-এর জন্য অতিরিক্ত ব্যবস্থা দরকার। যেমন:
+- Short-lived Access Token
+- Refresh Token
+- Token Rotation
+- Token Revocation / Deny List
+- Token Versioning
+- Server-side User Status Check
+
+এগুলোর মাধ্যমে Security Requirement অনুযায়ী Token Management করা হয়।
+

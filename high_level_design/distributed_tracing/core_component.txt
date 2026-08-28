@@ -1,0 +1,534 @@
+Shortly : 
+Distributed Tracing-এর Core Components
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Component             | Description
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Trace                 | পুরো End-to-End Request-এর সম্পূর্ণ যাত্রাপথের Representation। একটি Trace মূলত একাধিক Span-এর সমষ্টি।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Span                  | একটি Request-এর ভেতরে সংঘটিত একক এবং নির্দিষ্ট কাজের একক (Unit of Work)। যেমন: একটি HTTP Request গ্রহণ, DB Query চালানো, বা Cache Look-up করা। এতে Start Time, Duration, Tags, Logs এবং Status Code থাকে।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Trace ID              | পুরো Request Lifecyle-এর জন্য তৈরি হওয়া একটি Globally Unique Identifier (128-bit integer)। সিস্টেমের প্রতিটি Service-এর মাধ্যমে এই একই Trace ID প্রবাহিত হয়।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Span ID               | নির্দিষ্ট প্রতিটি Span-এর জন্য আলাদা 64-bit Unique Identifier।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Parent Span ID        | Parent-Child সম্পর্ক তৈরি করার জন্য Child Span-এর ভেতর Parent Span-এর ID সংরক্ষিত থাকে।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Context Propagation   | HTTP Headers বা gRPC Metadata-এর মাধ্যমে এক Service থেকে অন্য Service-এ Trace Context (Trace ID, Parent Span ID) স্থানান্তরিত করার প্রক্রিয়া।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Instrumentation (SDK) | Application Code-এর ভেতর Tracing Logic যুক্ত করার জন্য ব্যবহৃত SDK (যেমন OpenTelemetry SDK)।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Collector / Agent     | Application থেকে tracking ডাটা গ্রহণ, filter, Aggregate এবং process করে Storage-এ পাঠায়।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Storage Backend       | Trace Data স্থায়ীভাবে জমা রাখার স্থান (যেমন Jaeger, Elasticsearch, Cassandra, ClickHouse)।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Visualization UI      | Trace Data Graphical timeline এবং Gantt chart আকারে প্রদর্শন করার Dashboard (যেমন Jaeger UI, Zipkin, Grafana Tempo)।
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+Briefly :
+Distributed Tracing বুঝতে হলে প্রথমে একটি বিষয় পরিষ্কার করা গুরুত্বপূর্ণ: একটি distributed system-এ একটি user request সাধারণত একটি মাত্র
+service-এর মধ্যে শেষ হয় না। Request বিভিন্ন service, database, cache, message broker বা অন্য infrastructure component-এর মধ্য দিয়ে
+যেতে পারে।
+
+Distributed Tracing এই সম্পূর্ণ journey-কে একটি Trace হিসেবে record করে এবং journey-টির প্রতিটি উল্লেখযোগ্য operation-কে আলাদা Span হিসেবে record করে।
+
+একটি সাধারণ flow এমন হতে পারে:
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Distributed Request                             │
+│                                                                         │
+│  Client                                                                 │
+│    │                                                                    │
+│    ▼                                                                    │
+│  Order Service                                                          │
+│    │                                                                    │
+│    ├──────────────► Inventory Service                                   │
+│    │                     │                                              │
+│    │                     └──────────► PostgreSQL                        │
+│    │                                                                    │
+│    └──────────────► Payment Service                                     │
+│                          │                                              │
+│                          └──────────► Payment Database                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+             সব operation মিলে = একটি Trace
+             প্রতিটি operation = একটি Span
+
+1. Trace
+Trace হলো একটি distributed operation বা request-এর শুরু থেকে শেষ পর্যন্ত সম্পূর্ণ execution-এর representation।
+অর্থাৎ একটি request যখন একাধিক service-এর মধ্য দিয়ে যায়, সেই request-এর সঙ্গে সম্পর্কিত সব Span মিলে একটি Trace তৈরি করে। উদাহরণ:
+
+    User
+     │
+     ▼
+    Order Service
+     │
+     ├── Inventory Service
+     │
+     └── Payment Service
+
+এই সম্পূর্ণ request journey-টি একটি Trace হতে পারে। Trace-এর মধ্যে সাধারণত এমন একটি structure থাকে:
+
+    Trace
+    │
+    ├── Span A
+    │   ├── Span B
+    │   │   └── Span C
+    │   │
+    │   └── Span D
+    │
+    └── Span E
+
+এখানে Trace হলো পুরো tree/graph-এর representation, আর Span হলো সেই tree/graph-এর individual operation। Trace-এর প্রধান বৈশিষ্ট্য
+        `একটি Trace-এর জন্য একটি Trace ID থাকে। Trace-এর অন্তর্ভুক্ত সকল Span একই Trace ID share করে।`
+
+যেমন, Trace ID = 4bf92f3577b34da6a3ce929d0e0e4736
+
+Order Service      ── Trace ID ──►
+Inventory Service  ── Trace ID ──►
+Payment Service    ── Trace ID ──►
+
+তাই Trace ID ব্যবহার করে পুরো distributed request-এর সব Span একসঙ্গে identify করা যায়।
+
+
+2. Span
+Span হলো Trace-এর মধ্যে একটি নির্দিষ্ট operation বা unit of work-এর representation।
+একটি request-এর পুরো journey-কে ছোট ছোট operation-এ ভাগ করলে প্রতিটি operation একটি Span হতে পারে। উদাহরণ:
+
+    Order Service
+         │
+         ├── Receive HTTP Request       → Span
+         │
+         ├── Validate Order             → Span
+         │
+         ├── Query PostgreSQL           → Span
+         │
+         └── Call Payment Service       → Span
+
+অর্থাৎ:
+
+    Trace
+     │
+     ├── HTTP Request Span
+     ├── Database Span
+     ├── Payment Service Span
+     └── Other Operation Spans
+
+একটি Span সাধারণত অন্তত নিম্নলিখিত information ধারণ করে:
+- Trace ID
+- Span ID
+- Parent Span ID — যদি parent থাকে
+- Start Time
+- End Time / Duration
+- Attributes
+- Events
+- Status
+- Span Kind
+
+উদাহরণ:
+
+    Span
+    ├── Trace ID
+    ├── Span ID
+    ├── Parent Span ID
+    ├── Start Time
+    ├── Duration
+    ├── Attributes
+    ├── Events
+    ├── Status
+    └── Span Kind
+
+
+3. Trace ID
+Trace ID হলো একটি সম্পূর্ণ Trace-কে uniquely identify করার identifier। OpenTelemetry-এর Trace ID হলো: 128-bit অর্থাৎ 128 bits = 16 bytes
+সাধারণভাবে hexadecimal representation-এ এটি 32 hexadecimal character হিসেবে দেখা যায়। উদাহরণ: 4bf92f3577b34da6a3ce929d0e0e4736
+
+একটি Trace-এর সব Span একই Trace ID ব্যবহার করে।
+Trace ID = ABC123
+
+Order Service
+    Span ID = 111
+
+Inventory Service
+    Span ID = 222
+
+Payment Service
+    Span ID = 333
+
+এখানে:
+Span 111 → Trace ID ABC123
+Span 222 → Trace ID ABC123
+Span 333 → Trace ID ABC123
+
+ফলে tracing backend পুরো request-এর সব Span একসঙ্গে group করতে পারে।
+
+
+৪. Span ID
+Span ID একটি নির্দিষ্ট Span-কে identify করে। OpenTelemetry-এর Span ID হলো: 64-bit অর্থাৎ 64 bits = 8 bytes
+প্রতিটি Span-এর নিজস্ব Span ID থাকে। উদাহরণ:
+
+Trace ID = ABC123
+
+Order Service
+└── Span ID = 111
+
+Inventory Service
+└── Span ID = 222
+
+Payment Service
+└── Span ID = 333
+
+এখানে Trace ID একই হলেও Span ID আলাদা। তাই:
+    Trace ID → পুরো Trace identify করে
+    Span ID  → নির্দিষ্ট Span identify করে
+
+
+5. Parent-Child Relationship
+Distributed Tracing-এ Span-গুলোর মধ্যে causal relationship বোঝানোর জন্য parent-child relationship ব্যবহার করা হয়।
+একটি operation থেকে আরেকটি operation শুরু হলে পরের Span-টি আগের Span-এর child হতে পারে। উদাহরণ:
+
+    Order Service
+    │
+    └── Span A
+          │
+          ├── Span B → Inventory Service
+          │
+          └── Span C → Payment Service
+
+এখানে:
+
+    Span A
+     ├── Parent: none
+     │
+     ├── Span B
+     │    └── Parent Span ID = Span A
+     │
+     └── Span C
+          └── Parent Span ID = Span A
+
+অর্থাৎ Child Span-এর metadata-তে parent Span-এর identity সম্পর্কিত information থাকে।
+
+OpenTelemetry-এর আধুনিক model-এ parent relationship SpanContext এবং Span creation-এর context-এর মাধ্যমে establish হয়।
+
+
+6. Span Context
+Span Context হলো একটি Span-এর distributed tracing identity এবং propagation-এর জন্য প্রয়োজনীয় মূল context information।
+OpenTelemetry-এর ক্ষেত্রে Span Context-এর গুরুত্বপূর্ণ অংশ হলো:
+
+Span Context
+├── Trace ID
+├── Span ID
+├── Trace Flags
+└── Trace State
+
+- Trace ID
+কোন Trace-এর অন্তর্ভুক্ত তা নির্দেশ করে।
+
+- Span ID
+কোন নির্দিষ্ট Span-এর সঙ্গে context সম্পর্কিত তা নির্দেশ করে।
+
+- Trace Flags
+Tracing সম্পর্কিত flags ধারণ করে। বর্তমানে সবচেয়ে গুরুত্বপূর্ণ flag হলো sampled flag, যা নির্দেশ করতে পারে Trace/Span recording বা sampling-এর জন্য নির্বাচিত হয়েছে কি না।
+
+- Trace State
+Vendor-specific বা implementation-specific tracing information বহন করার জন্য ব্যবহৃত হয়, W3C Trace Context specification-এর নিয়ম অনুযায়ী।
+
+
+7. Context Propagation
+একটি distributed system-এ সবচেয়ে গুরুত্বপূর্ণ সমস্যাগুলোর একটি হলো, এক Service কীভাবে জানবে যে incoming request কোন Trace-এর অংশ?
+এখানে Context Propagation প্রয়োজন। Context Propagation হলো একটি execution context এক process বা service boundary-এর মধ্য দিয়ে অন্য process বা service-এ স্থানান্তর করার প্রক্রিয়া।
+উদাহরণ:
+
+    Client
+      │
+      │
+      ▼
+ API Gateway
+      │
+      │ Trace Context
+      ▼
+ Order Service
+      │
+      │ Trace Context
+      ▼
+ Inventory Service
+      │
+      │ Trace Context
+      ▼
+ Payment Service
+
+HTTP-এর ক্ষেত্রে সাধারণত tracing context HTTP headers-এর মাধ্যমে propagate করা হয়। OpenTelemetry ecosystem-এ W3C Trace Context একটি প্রধান standard।
+একটি W3C traceparent header-এর মাধ্যমে মূলত Trace ID, parent Span ID এবং trace flags-এর মতো information propagate করা হয়।
+
+traceparent:
+00-<trace-id>-<parent-span-id>-<trace-flags>
+
+
+8. Instrumentation
+Application-এর কোন operation কখন শুরু হলো, কখন শেষ হলো, কত সময় লাগলো, error হলো কি না—এসব information tracing system-এর জন্য record করার ব্যবস্থা হলো instrumentation।
+উদাহরণ:
+
+    HTTP Request
+         │
+         ▼
+    Instrumentation
+         │
+         ├── Start Span
+         ├── Record Attributes
+         ├── Record Events
+         ├── Record Status
+         └── End Span
+
+Instrumentation দুইভাবে হতে পারে:
+
+1. Automatic Instrumentation
+Framework বা library-এর গুরুত্বপূর্ণ operation automatically instrument করা হয়। যেমন:
+- FastAPI
+- HTTP Client
+- SQLAlchemy
+- Redis
+- Kafka
+এগুলোর জন্য instrumentation library থাকলে manually প্রতিটি operation-এর জন্য Span তৈরি করার প্রয়োজন কমে যায়।
+
+2. Manual Instrumentation
+Business logic-এর গুরুত্বপূর্ণ জায়গায় নিজে Span তৈরি করা যায়। যেমন:
+
+    process_order()
+        │
+        └── custom Span
+
+এটি বিশেষভাবে useful যখন business operation-এর এমন অংশ trace করতে হয় যা automatic instrumentation থেকে পাওয়া যায় না।
+
+
+9. OpenTelemetry API
+OpenTelemetry API হলো application instrumentation-এর জন্য programming interface। API-এর মাধ্যমে application বলতে পারে:
+
+- আমি একটি Span শুরু করতে চাই
+- আমি Attribute যোগ করতে চাই
+- আমি Event record করতে চাই
+- আমি Span শেষ করতে চাই
+অর্থাৎ API application-এর instrumentation interface প্রদান করে।
+
+
+10. OpenTelemetry SDK
+OpenTelemetry SDK, API-এর implementation এবং telemetry processing-এর জন্য প্রয়োজনীয় functionality প্রদান করে। সহজভাবে:
+
+    Application
+        │
+        ▼
+    OpenTelemetry API
+        │
+        ▼
+    OpenTelemetry SDK
+        │
+        ▼
+    Exporter
+
+SDK সাধারণত Span creation, processing, sampling এবং export-related functionality-এর অংশ সরবরাহ করে। তাই:
+
+    Instrumentation
+           │
+           ▼
+    OpenTelemetry API
+           │
+           ▼
+    OpenTelemetry SDK
+           │
+           ▼
+       Exporter
+
+Instrumentation এবং SDK একই জিনিস নয়।
+- Instrumentation → application operation থেকে telemetry তৈরি করার ব্যবস্থা
+- API → instrumentation করার interface
+- SDK → সেই API-এর implementation এবং telemetry processing functionality
+
+
+
+11. OpenTelemetry Collector
+OpenTelemetry Collector হলো একটি vendor-neutral telemetry pipeline component, যা application বা অন্য telemetry source থেকে telemetry receive করে,
+প্রয়োজন অনুযায়ী process করে এবং destination-এ export করে। একটি সাধারণ flow:
+
+    Application
+         │
+         │ OTLP
+         ▼
+    ┌───────────────────────┐
+    │ OpenTelemetry         │
+    │ Collector             │
+    │                       │
+    │ Receiver              │
+    │    ↓                  │
+    │ Processor             │
+    │    ↓                  │
+    │ Exporter              │
+    └───────────────────────┘
+         │
+         ▼
+    Tracing Backend
+
+Collector ব্যবহার করার বড় সুবিধা হলো application এবং backend-এর মধ্যে একটি independent telemetry pipeline তৈরি করা যায়।
+
+
+12. Receiver
+Collector-এর Receiver telemetry গ্রহণ করে।
+
+উদাহরণ:
+
+    Application
+         │
+         │ OTLP
+         ▼
+    Receiver
+
+Receiver বিভিন্ন protocol বা source থেকে telemetry গ্রহণ করতে পারে।
+
+যেমন:
+OTLP
+Jaeger
+Zipkin
+Kafka
+কোন receiver কোন protocol support করবে তা Collector-এর configuration এবং receiver implementation-এর উপর নির্ভর করে।
+
+সহজভাবে
+Receiver = Telemetry গ্রহণ করে
+
+
+13. Processor
+Collector-এর Processor receiver থেকে পাওয়া telemetry data-এর উপর processing চালায়। Processor ব্যবহার করে telemetry:
+
+- batch করা
+- attributes পরিবর্তন বা যোগ করা
+- filtering করা
+- resource information যোগ করা
+- sampling-related processing করা
+- অন্যান্য supported transformation করা
+
+যেমন:
+
+    Receiver
+       │
+       ▼
+    Processor
+       │
+       ├── Batch
+       ├── Filter
+       ├── Transform
+       └── Resource processing
+       │
+       ▼
+    Exporter
+
+সহজভাবে
+Processor = Telemetry process করে
+
+
+14. Exporter
+Exporter processed telemetry-কে কোনো external destination বা backend-এ পাঠায়।
+
+Flow:
+    Application
+        │
+        ▼
+    Receiver
+        │
+        ▼
+    Processor
+        │
+        ▼
+    Exporter
+        │
+        ▼
+    Backend
+
+Exporter বিভিন্ন backend বা protocol-এর জন্য telemetry পাঠানোর ব্যবস্থা করতে পারে।
+
+সহজভাবে
+Exporter = Telemetry বাইরে পাঠায়
+
+
+15. Connector
+OpenTelemetry Collector-এর Connector একটি বিশেষ component, যা একটি pipeline-এর telemetry data-কে অন্য pipeline-এর input হিসেবে ব্যবহার করার সুযোগ দেয়।
+
+সহজভাবে:
+
+    Pipeline A
+        │
+        ▼
+     Connector
+        │
+        ▼
+    Pipeline B
+
+Connector শুধু সাধারণ exporter-এর মতো external backend-এ data পাঠানোর জন্য নয়; Collector-এর ভিতরের pipelineগুলোর মধ্যে data flow তৈরি করতেও ব্যবহৃত হয়।
+এটি বিশেষভাবে useful যখন একটি signal বা pipeline-এর data অন্য pipeline-এ processing-এর input হিসেবে ব্যবহার করতে হয়।
+
+
+16. Extension
+Collector-এর Extension Collector-এর core telemetry processing pipeline-এর বাইরে অতিরিক্ত functionality প্রদান করে।
+
+যেমন:
+
+Collector
+│
+├── Receivers
+├── Processors
+├── Exporters
+├── Connectors
+└── Extensions
+
+Extension সাধারণত telemetry data processing-এর মূল pipeline stage হিসেবে কাজ করে না। বরং Collector-এর operational functionality, health, authentication, configuration-related বা অন্যান্য supported capability প্রদান করতে পারে।
+
+তাই:
+Receiver  → Receive
+Processor → Process
+Exporter  → Export
+Connector → Pipeline-to-pipeline connection
+Extension → Collector-এর অতিরিক্ত functionality
+
+
+17. Storage / Trace Backend
+Collector বা application থেকে telemetry শেষ পর্যন্ত কোনো trace backend-এ পৌঁছায়। Backend-এর কাজ হলো trace data গ্রহণ, সংরক্ষণ এবং query/search করার সুবিধা প্রদান করা।
+উদাহরণ হিসেবে tracing ecosystem-এ ব্যবহৃত বিভিন্ন backend/storage technology থাকতে পারে:
+
+- Jaeger
+- Grafana Tempo
+- Zipkin
+- Elasticsearch
+- ClickHouse
+
+18. Visualization UI
+Trace data raw form-এ দেখলে distributed request বোঝা কঠিন হতে পারে। তাই tracing system সাধারণত একটি visualization interface প্রদান করে।
+
+এখানে দেখা যেতে পারে:
+
+    Trace
+    │
+    ├── Order Service       ███████████████
+    │   ├── DB Query           ███
+    │   └── Payment Call           ███████
+    │
+    ├── Inventory Service         █████
+    │
+    └── Payment Service                 █████████
+
+এ ধরনের visualization-এর মাধ্যমে:
+- কোন service কত সময় নিয়েছে
+- কোন Span সবচেয়ে slow
+- কোন operation error করেছে
+- Parent-child relationship কী
+- একটি request কোন কোন service-এর মধ্য দিয়ে গেছে
+- কোথায় latency বেশি
+এসব সহজে বোঝা যায়।
+
+উদাহরণ:
+
+Trace
+ └── Order Service
+      ├── PostgreSQL
+      ├── Inventory Service
+      │      └── PostgreSQL
+      └── Payment Service
+             └── Payment Provider
+
+এখানে একটি Trace-এর সম্পূর্ণ execution tree/timeline visually দেখা যায়।
+

@@ -1,0 +1,338 @@
+Config Server একটি centralized configuration management system। এর মূল উদ্দেশ্য হলো বিভিন্ন microservice-এর configuration একটি centralized location
+থেকে manage এবং provide করা।
+
+একটি সাধারণ architecture:
+
+                         ┌──────────────────────┐
+                         │   Backend Storage    │
+                         │                      │
+                         │ Git / Vault / etc.   │
+                         └──────────┬───────────┘
+                                    │
+                                    │ Configuration
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │     Config Server    │
+                         │                      │
+                         │ - Load configuration │
+                         │ - Select environment │
+                         │ - Expose API         │
+                         │ - Return config      │
+                         └──────────┬───────────┘
+                                    │
+                     Configuration  │
+                                    │
+                 ┌──────────────────┼──────────────────┐
+                 │                  │                  │
+                 ▼                  ▼                  ▼
+        ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+        │ Order Service  │ │ Payment Service│ │ User Service   │
+        │ Config Client  │ │ Config Client  │ │ Config Client  │
+        └────────────────┘ └────────────────┘ └────────────────┘
+
+        Optional :
+        ┌──────────────────────────────┐
+        │ Message Broker               │
+        │ Kafka / RabbitMQ             │
+        │                              │
+        │ Configuration-change         │
+        │ notification / refresh flow  │
+        └──────────────────────────────┘
+
+        ┌─────────────────────────┐
+        │    Security / Secrets   │
+        │ Auth / Vault / etc.     │
+        └─────────────────────────┘
+
+
+1. Config Server Application
+এটি Config Server-এর মূল runtime component। এর প্রধান দায়িত্ব হলো Backend Storage থেকে configuration data retrieve করা এবং Config Client-কে সেই
+configuration provide করা।
+
+ধরা যাক, একটি Order Service-এর configuration:
+- server
+port: 8081
+
+- database
+host: localhost
+port: 5432
+
+- payment:
+ service-url: http://payment-service
+
+এই configuration Git repository-তে থাকতে পারে। Order Service সরাসরি Git repository থেকে configuration না নিয়ে Config Server-এর কাছে request করতে পারে:
+
+    Order Service
+          |
+          | GET configuration
+          v
+    Config Server
+          |
+          | read configuration
+          v
+    Git Repository
+
+Config Server configuration retrieve করে Order Service-কে response দেয়। অর্থাৎ: Config Server = Configuration retrieval + Configuration exposure/pass
+
+Config Server Application-এর প্রধান কাজ
+- Backend Storage-এর সাথে communicate করে
+- configuration retrieve করে
+- environment/profile অনুযায়ী configuration resolve করে
+- Config Client-এর জন্য configuration endpoint provide করে
+- একই configuration source থেকে multiple service-কে configuration দিতে পারে
+
+একটি Python ecosystem-এ এই ধরনের Config Server নিজে FastAPI দিয়ে implement করা সম্ভব। তবে FastAPI নিজে built-in Config Server দেয় না। Config Server capability
+একটি architecture হিসেবে build করতে হবে অথবা উপযুক্ত external configuration system ব্যবহার করতে হবে।
+
+
+2. Backend Configuration Storage
+এটি হলো সেই জায়গা যেখানে actual configuration data persist/save করা থাকে। Common backend হলো:
+- Git
+- SVN
+- File System
+- HashiCorp Vault
+- Database
+
+তবে এখানে একটি distinction গুরুত্বপূর্ণ, সব Config Server implementation একই ধরনের backend support করে না। কোন backend ব্যবহার করা যাবে, সেটি নির্ভর করে নির্দিষ্ট Config Server
+implementation/framework-এর উপর। সবচেয়ে common example, Git Repository
+
+যেমন:
+config-repository/
+│
+├── application.yml
+├── order-service.yml
+├── payment-service.yml
+├── inventory-service.yml
+└── notification-service.yml
+
+এখানে application.yml, সাধারণ configuration রাখতে পারে।
+আর order-service.yml, payment-service.yml, inventory-service.yml, notification-service.yml service-specific configuration রাখতে পারে।
+
+Q : কেন Git গুরুত্বপূর্ণ?
+Git ব্যবহার করলে configuration-এর Version History, Rollback, Change Tracking, Auditability সহজ হয়। উদাহরণ:
+
+    Version 1
+       |
+       | database port = 5432
+       |
+    Version 2
+       |
+       | database port = 5433
+
+কোন configuration change কখন করা হয়েছে, সেটি Git history থেকে দেখা যায় এবং প্রয়োজন হলে আগের version-এ rollback করা যায়।
+
+
+3. Config Client
+Config Client হলো সেই application বা microservice যেটি Config Server থেকে configuration গ্রহণ করে। উদাহরণ:
+- Order Service
+- Payment Service
+- Inventory Service
+- Notification Service
+
+প্রতিটি service Config Client হিসেবে কাজ করতে পারে।
+
+Architecture:
+
+                 Config Server
+                      |
+        ┌─────────────┼─────────────┐
+        |             |             |
+        ▼             ▼             ▼
+   Order Service Payment Service Inventory Service
+    (Client)        (Client)        (Client)
+
+ধরা যাক Order Service start হচ্ছে। তখন একটি common flow:
+
+    Order Service starts
+            |
+            v
+    Config Server-এর কাছে configuration request
+            |
+            v
+    Config Server Backend Storage থেকে data retrieve করে
+            |
+            v
+    Configuration, Order Service-কে return করে
+            |
+            v
+    Order Service configuration ব্যবহার করে
+
+এখানে Config Client-এর কাজ হলো configuration consume করা।
+
+
+4. Configuration Repository / Configuration Source
+Learning-এর ক্ষেত্রে Backend Storage এবং Configuration Repository-কে আলাদা concept হিসেবে বোঝা ভালো।
+
+Backend Storage হলো configuration কোথায় রাখা হচ্ছে তার broader concept। আর Configuration Repository হলো সেই repository যেখানে
+configuration files/data logically organize করা থাকে। উদাহরণ:
+
+Git Repository
+       |
+       ├── application.yml
+       ├── order-service.yml
+       ├── payment-service.yml
+       └── inventory-service.yml
+
+এখানে Git হলো storage/backend এবং repository হলো configuration-এর organized source।
+
+
+5. Environment/Profile Configuration
+এটি Config Server-এর architecture-এর একটি গুরুত্বপূর্ণ concept। একটি একই service-এর জন্য আলাদা environment থাকতে পারে:
+- Development
+- Testing
+- Staging
+- Production
+
+উদাহরণ:
+order-service-dev.yml
+order-service-test.yml
+order-service-prod.yml
+
+তখন Config Server service এবং profile অনুযায়ী appropriate configuration provide করতে পারে।
+
+Conceptually:
+
+    Order Service
+         |
+         | profile = production
+         v
+    Config Server
+         |
+         v
+    order-service-prod.yml
+
+ফলে একই application code বিভিন্ন environment-এ ব্যবহার করা সম্ভব হয়, কিন্তু configuration environment অনুযায়ী আলাদা থাকে।
+
+
+6. Configuration Resolution/Loading Mechanism
+Config Server-এর আরেকটি গুরুত্বপূর্ণ responsibility হলো configuration resolve করা। একটি service-এর configuration শুধু একটি file থেকে নাও আসতে পারে।
+উদাহরণ:
+
+    application.yml
+           +
+    order-service.yml
+           +
+    order-service-prod.yml
+
+এখানে application.yml common configuration রাখতে পারে। তারপর order-service-prod.yml production level-এ Order Service-specific configuration রাখতে পারে।
+Config Server implementation/framework-এর rules অনুযায়ী এই configuration sources combine/resolve হয়ে final configuration তৈরি হতে পারে।
+
+Conceptually:
+
+    Common Configuration
+            +
+    Service Configuration
+            +
+    Environment Configuration
+            |
+            v
+    Final Configuration
+            |
+            v
+    Config Client
+
+
+7. Configuration Refresh Mechanism
+এটি Config Server-এর core storage component নয় বরং configuration change-এর পরে running service কীভাবে নতুন configuration গ্রহণ করবে সেই mechanism।
+
+এখানে একটি খুব গুরুত্বপূর্ণ distinction আছে। ধরা যাক:
+
+    Git Repository
+         |
+         | configuration changed
+         v
+    Config Server
+
+এতে automatically সব running microservice-এর in-memory configuration পরিবর্তন হয়ে যায়—এমনটি ধরে নেওয়া ঠিক নয়। Running application-এর নতুন
+configuration নেওয়ার জন্য framework-specific refresh mechanism প্রয়োজন হতে পারে। যেমন:
+
+    Git change
+        |
+        v
+    Config Server has new configuration
+        |
+        v
+    Refresh mechanism
+        |
+        v
+    Config Client retrieves new configuration
+        |
+        v
+    Application uses updated configuration
+
+এটি implementation অনুযায়ী বিভিন্নভাবে করা যায়।
+
+
+৮. Message Broker — Optional Supporting Component
+Config Server architecture-এ RabbitMQ বা Apache Kafka ব্যবহার করা যেতে পারে, তবে এগুলো mandatory Key Component নয়।
+একটি basic Config Server architecture শুধু:
+
+    Config Server
+          +
+    Git / Configuration Backend
+          +
+    Config Client
+
+দিয়েই কাজ করতে পারে। অর্থাৎ, configuration provide করার জন্য Message Broker বাধ্যতামূলক নয়।
+
+Q : Message Broker কেন ব্যবহার করা হয়?
+Distributed environment-এ অনেকগুলো microservice একই Config Server থেকে configuration গ্রহণ করতে পারে।
+
+ধরা যাক:
+Order Service
+Payment Service
+Inventory Service
+
+এখন Git repository-তে configuration পরিবর্তন হয়েছে।
+
+    Git
+     |
+     | configuration changed
+     v
+    Config Server
+
+Config Server নতুন configuration provide করতে পারে। কিন্তু running microservice-গুলোকে configuration change সম্পর্কে notification দিতে Message Broker ব্যবহার করা যেতে পারে।
+
+Flow:
+
+                 Git
+                  |
+                  | configuration changed
+                  v
+            Config Server
+                  |
+                  | publish refresh event
+                  v
+          Message Broker
+          /      |       \
+         /       |        \
+        v        v         v
+     Order    Payment   Inventory
+     Service   Service    Service
+
+এখানে Message Broker-এর প্রধান role হলো configuration change-এর notification multiple Config Client-এর কাছে distribute করা।
+
+
+9. Security Layer
+Production Config Server architecture-এ security অত্যন্ত গুরুত্বপূর্ণ। কারণ configuration-এর মধ্যে sensitive information থাকতে পারে, যেমন:
+- Database credentials
+- API keys
+- Service credentials
+- Encryption keys
+
+তাই Config Server এবং Backend Storage access সাধারণত authentication এবং authorization-এর মাধ্যমে protected রাখা হয়। একটি production architecture:
+
+    Config Client
+         |
+         | Authenticated Request
+         v
+    Config Server
+         |
+         | Authenticated Access
+         v
+    Configuration Backend
+
+আর sensitive secrets-এর জন্য সাধারণ Git repository-এর পরিবর্তে dedicated secret-management system যেমন HashiCorp Vault ব্যবহার করা যেতে পারে।
+
+

@@ -1,0 +1,218 @@
+Distributed Tracing হলো Microservices Architecture-এ একটি নির্দিষ্ট User Request বা Transaction একাধিক Independent Service এবং Infrastructure-এর মধ্য দিয়ে
+যাওয়ার সময় তার সম্পূর্ণ Lifecycle Tracking, পর্যবেক্ষণ (Observability) এবং Timeline analysis করার একটি পদ্ধতি।
+
+Monolithic Architecture-এ সমস্ত Logic একটি মাত্র Process-এ রান হওয়ার কারণে Centralized Log File দিয়ে Debugging করা সহজ। কিন্তু Microservices Architecture-এ
+একটি single Request একাধিক Microservices, Databases, Message Queues (যেমন RabbitMQ, Kafka) এবং External APIs-এর মধ্যে দিয়ে যাতায়াত করে।
+
+Distributed Tracing পুরো request lifecycle-কে একটি একক End-to-End Visual Timeline (Gantt Chart) হিসেবে উপস্থাপন করে।
+
+
+Q : Distributed Tracing কী?
+-> Distributed Tracing হলো Microservices Architecture-এ একটি নির্দিষ্ট User Request বা Transaction একাধিক Independent Service, Database, Message Broker এবং
+External Service-এর মধ্য দিয়ে যাওয়ার সময় তার সম্পূর্ণ End-to-End Journey Observation এবং analysis করার একটি Observability পদ্ধতি।
+
+একটি Microservices System-এ একটি User Request সাধারণত একটি মাত্র Service-এর মধ্যে সীমাবদ্ধ থাকে না। উদাহরণস্বরূপ, একজন User একটি Order তৈরি করল:
+
+        User
+         │
+         ▼
+        API Gateway
+         │
+         ▼
+        Order Service
+         │
+         ├──────────────► Inventory Service
+         │                     │
+         │                     ▼
+         │                 Database
+         │
+         ├──────────────► Payment Service
+         │                     │
+         │                     ▼
+         │                 Payment Gateway
+         │
+         └──────────────► Notification Service
+                               │
+                               ▼
+                            Email/SMS
+
+এখানে User-এর কাছে এটি একটি মাত্র operation: Create Order
+
+কিন্তু Backend-এর দৃষ্টিকোণ থেকে এটি অনেকগুলো Service এবং Infrastructure Component-এর সমন্বয়ে সম্পন্ন হচ্ছে। এখন যদি User-এর Request সম্পূর্ণ হতে 3 seconds লাগে, তাহলে একটি গুরুত্বপূর্ণ প্রশ্ন হলো:
+                এই 3 seconds-এর মধ্যে কোন Service কত সময় নিয়েছে?
+
+ধরা যাক:
+
+Total Request Time = 3 seconds
+
+API Gateway        = 20 ms
+Order Service      = 150 ms
+Inventory Service  = 80 ms
+Payment Service    = 2,500 ms
+Database Query     = 200 ms
+Notification       = 30 ms
+
+এখানে স্পষ্টভাবে দেখা যাচ্ছে যে Payment Service প্রধান latency bottleneck।
+Distributed Tracing এই সম্পূর্ণ Request-এর বিভিন্ন operation-এর সময় এবং পারস্পরিক সম্পর্ককে একটি Trace হিসেবে সংগ্রহ করে, যাতে পুরো Request-এর execution flow analysis করা যায়।
+
+OpenTelemetry-এর terminology অনুযায়ী একটি Trace মূলত একাধিক Span-এর সমন্বয়ে গঠিত, এবং Span-গুলোর parent-child relationship একটি distributed operation-এর
+causal structure প্রকাশ করে।
+
+
+Q : Span কী?
+-> Span হলো একটি Trace-এর ভিতরে সংঘটিত একটি নির্দিষ্ট operation-এর representation। অর্থাৎ:
+
+    Trace
+     │
+     ├── Span
+     ├── Span
+     ├── Span
+     └── Span
+
+
+Example :
+
+Trace: Create Order
+
+Span 1 → API Gateway request
+Span 2 → Order Service
+Span 3 → Database query
+Span 4 → Inventory Service
+Span 5 → Payment Service
+Span 6 → Payment Gateway
+Span 7 → Notification Service
+
+
+প্রতিটি Span সাধারণত contains করে:
+- Span Name
+- Start Time
+- End Time
+- Duration
+- Span Context
+- Span Kind
+- Attributes
+- Events
+- Status
+- Parent relationship
+- Links
+
+OpenTelemetry specification অনুযায়ী একটি Span একটি single operation represent করে এবং এর মধ্যে start/end timestamp, attributes, events, status, links এবং parent সম্পর্কিত তথ্য থাকতে পারে।
+
+
+Q : Span ID কী?
+-> প্রতিটি Span-এর নিজস্ব একটি Span ID থাকে। উদাহরণ:
+
+Trace ID = T123
+
+Span A
+Span ID = S001
+
+Span B
+Span ID = S002
+
+Span C
+Span ID = S003
+
+Trace ID একই থাকে T123 কিন্তু প্রতিটি Span-এর Span ID আলাদা। OpenTelemetry-তে Span ID হলো 8-byte বা 64-bit identifier। এর hexadecimal representation
+16 টি lowercase hexadecimal character।
+
+
+Q : Parent Span ID কী?
+-> Microservices-এর মধ্যে একটি operation অন্য একটি operation-এর কারণে তৈরি হলে তাদের মধ্যে parent-child relationship তৈরি হয়। উদাহরণ:
+
+    Order Service
+         │
+         └── Span A
+               │
+               ▼
+        Payment Service
+               │
+               └── Span B
+
+এখানে:
+Span A = Parent
+Span B = Child
+
+তাই Span B-এর context-এ Span A-এর identifier parent হিসেবে থাকে।
+
+    Span B
+    ├── Trace ID = T123
+    ├── Span ID = S002
+    └── Parent Span ID = S001
+
+এভাবেই tracing system বুঝতে পারে parent কে আর child কে:
+    A
+    └── B
+
+এবং আরও complex system হলে :
+
+    A
+    ├── B
+    │   ├── D
+    │   └── E
+    │
+    └── C
+        └── F
+
+এই Parent-Child relationship থেকেই Trace-এর execution tree তৈরি হয়।
+
+
+Q : Trace ID কী?
+-> একটি Distributed Request শুরু হওয়ার সময় একটি Trace ID তৈরি বা গ্রহণ করা হয়। এই Trace ID পুরো Trace-কে শনাক্ত করে। Example :
+
+Trace ID:
+4bf92f3577b34da6a3ce929d0e0e4736
+
+তারপর একই Request যখন বিভিন্ন Service-এর মধ্য দিয়ে যায়, তখন প্রত্যেক Service-এর Span একই Trace ID ব্যবহার করে।
+
+    Trace ID = ABC123
+
+    API Gateway
+        │
+        ├── Span A
+        │
+        ▼
+    Order Service
+        │
+        ├── Span B
+        │
+        ▼
+    Payment Service
+        │
+        └── Span C
+
+এখানে:
+Span A → Trace ID = ABC123
+Span B → Trace ID = ABC123
+Span C → Trace ID = ABC123
+
+ফলে Tracing Backend বুঝতে পারে যে এই তিনটি Span একই End-to-End Request-এর অংশ।
+
+OpenTelemetry Trace ID হলো 16-byte বা 128-bit identifier। এটিকে একটি integer হিসেবে চিন্তা করা যেতে পারে, কিন্তু specification-এর ভাষায় এটি একটি 16-byte
+identifier। OpenTelemetry অনুযায়ী Trace ID-এর hexadecimal representation 32 টি lowercase hexadecimal character নিয়ে গঠিত
+
+
+-> Trace হলো সম্পূর্ণ Request-এর representation, আর Span হলো সেই Request-এর ভিতরের পৃথক operation।
+
+    Trace ID = T1
+
+    API Gateway
+        │
+        └── Span A
+              │
+              ▼
+         Order Service
+              │
+              ├── Span B
+              │
+              ├────────► Inventory Service
+              │               │
+              │               └── Span C
+              │
+              └────────► Payment Service
+                              │
+                              └── Span D
+
+
+
+

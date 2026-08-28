@@ -1,0 +1,50 @@
+1. Asynchronous Logging (Performance Optimization)
+Synchronous system-এ disk-এ Write করা বা Network-এর মাধ্যমে log data পাঠানোর সময় Main Thread Block হতে পারে। Python-এ Concurrency নিয়ে কাজ করার সময় এটি
+Application-এর Performance অনেক কমিয়ে দিতে পারে।
+
+Solution : Python-এর logging.handlers.QueueHandler ব্যবহার করে Asynchronous Logging implement করা যেতে পারে। এর ফলে log message-গুলো একটি Memory
+Queue-তে জমা হয় এবং একটি background Thread সেগুলো process করে। ফলে Main Thread-এর Execution সরাসরি বাধাগ্রস্ত হয় না।
+
+
+2. Security এবং PII Masking
+Microservices থেকে log পাঠানোর সময় খেয়াল রাখতে হবে যেন কোনোভাবেই Sensitive Data log file বা Database-এ সংরক্ষিত না হয়।
+
+Problem : ভুলবশত User-এর Password, Credit Card Number, Session Token বা Personally Identifiable Information (PII) log-এ চলে যেতে পারে।
+
+Solution : Log তৈরি হওয়ার সময় একটি Filter বা Custom Formatter ব্যবহার করে Sensitive Data-গুলো Mask বা Redact করতে হবে (যেমন: **** দিয়ে Replace করা)।
+
+
+3. Log Schema Standardization (Elastic Common Schema)
+ধরা যাক, System-এ ১০টি ভিন্ন Microservices আছে এবং তারা ১০টি ভিন্ন JSON Structure অনুসরণ করে log generate করে। একটি Service হয়তো IP Address-এর জন্য
+client_ip Field ব্যবহার করে, অন্যটি হয়তো ip_address ব্যবহার করে।
+
+Solution : পুরো System-এর জন্য একটি Standard Schema নির্ধারণ করতে হবে। যেমন Elastic Common Schema (ECS)। এতে user.id, http.request.method, url.path-এর
+মতো Field-এর নাম এবং Structure সব Service-এ একই থাকবে। ফলে Search, Filtering এবং Analysis আরও সহজ ও নির্ভুল হবে।
+
+
+4. Log Lifecycle এবং Retention Policy
+সব Log অনির্দিষ্টকাল ধরে Storage-এ রাখার প্রয়োজন নেই, কারণ প্রচুর Log Data Storage-এর Cost বাড়িয়ে দেয়।
+
+- Hot Storage: গত ৭ থেকে ১৪ দিনের Log, যা দ্রুত Search এবং Analysis করার জন্য প্রয়োজন।
+
+- Warm/Cold Storage: ৩০ থেকে ৯০ দিনের Log, যা তুলনামূলকভাবে কম Search করা হয়, কিন্তু Compliance বা অন্যান্য প্রয়োজনের জন্য সংরক্ষণ করা হতে পারে।
+
+- Archive/Delete: নির্দিষ্ট সময় পর Log Automatic ভাবে Archive করা বা Delete করার Policy নির্ধারণ করতে হবে।
+
+
+5. Modern Observability (OpenTelemetry)
+Centralized Logging হলো Observability-এর একটি অংশ মাত্র। বর্তমানে শুধুমাত্র Log ব্যবহার করে সম্পূর্ণ System-এর অবস্থা পর্যবেক্ষণ করা যায় না।
+
+- Logs: System-এ ঘটে যাওয়া Event-এর বিস্তারিত Record।
+- Metrics: CPU Usage, Memory Usage, Request Rate ইত্যাদির পরিমাপ (যেমন: Prometheus)।
+- Traces: একটি Request কোন কোন Service-এর মধ্য দিয়ে কত সময় ধরে অতিক্রম করেছে, তার Distributed Tracing তথ্য।
+
+বর্তমানে OpenTelemetry একটি Industry Standard Framework। এটি Logs, Metrics এবং Traces-এর Telemetry Data সংগ্রহ ও একীভূত
+করার জন্য ব্যবহৃত হয় এবং একটি পূর্ণাঙ্গ Observability System তৈরি করতে সাহায্য করে।
+
+
+6. Alerting এবং Anomaly Detection
+Centralized Logging-এর আরেকটি বড় সুবিধা হলো, log ডেটার ওপর ভিত্তি করে Alert তৈরি করা। যদি কোনো Service-এ নির্দিষ্ট Error log পর পর অনেকবার generate হয়,
+তবে স্বয়ংক্রিয়ভাবে Slack, Email বা PagerDuty-তে Notification পাঠানোর ব্যবস্থা (Alerting) করতে হবে। Kibana বা Grafana ব্যবহার করে খুব সহজেই এই Alert-গুলো
+configure করা যায়।
+

@@ -1,0 +1,62 @@
+Microservices Architecture-এ দুই ধরনের Scenario দেখতে পাওয়া যায়:
+1. API Gateway-এ শুরু (Backend Entry Point): Client (Browser/Mobile App) যদি Tracing Frontend SDK ব্যবহার না করে, তবে API Gateway-ই সিস্টেমের প্রথম Instrument করা উপাদান
+হিসেবে কাজ করে। এই ক্ষেত্রে API Gateway-তেই Root Span এবং Trace ID তৈরি হয়।
+
+2. Client Application-এ শুরু (End-to-End Entry Point): Web বা Mobile App-এ যদি OpenTelemetry Frontend SDK প্রয়োগ করা থাকে, তবে Client-এ Request তৈরির সময়
+Root Span ও Trace ID তৈরি হয়। API Gateway তখন কেবল সেই Trace ID গ্রহণ (Extract) করে এবং Downstream Service-এ পাঠিয়ে (Inject) দেয়।
+
+
+-> API Gateway থেকে শুরু হওয়া Distributed Tracing
+
+    [ Client Request ]
+           │
+           ▼
+    [ API Gateway ]  ──────────────► 1. Generates Trace ID & Root Span (Span A)
+           │                         2. Injects traceparent Header
+           ▼
+    [ Order Service ] ─────────────► 3. Extracts Trace ID
+           │                         4. Creates Child Span (Span B)
+           ├──► [ DB Query ] ──────► 5. Creates Child Span (Span C)
+           │
+           ▼
+    [ Payment Service ] ───────────► 6. Extracts Trace ID
+                                     7. Creates Child Span (Span D)
+
+
+Step 1: Request Entry & Trace Initialization (at API Gateway)
+- External Client থেকে HTTP/HTTPS Request API Gateway (যেমন NGINX, Kong, Traefik, Envoy or Custom Python Gateway)-এ পৌঁছায়।
+- API Gateway-এর OpenTelemetry Middleware Incoming Request-এর HTTP Header scan করে।
+- কোনো traceparent Header না পাওয়া গেলে API Gateway একটি 128-bit Unique Trace ID এবং 64-bit Root Span ID generate করে।
+
+
+Step 2: Gateway Execution & Context Injection
+- API Gateway নিজস্ব Execution (যেমন Authentication, Rate Limiting, Route Resolution) সম্পাদন করে এবং time record করে।
+- Internal Service (যেমন Order Service)-এ Request Forward করার পূর্বে HTTP Header-এ W3C TraceContext Standard মেনে traceparent Inject করে:
+    traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+
+
+Step 3: Header Extraction & Child Span Creation (at Downstream Service)
+Order Service Incoming Request গ্রহণ করে HTTP Header থেকে traceparent Extract করে। বিদ্যমান Trace ID ব্যবহার করে order service নিজের মধ্যে একটি নতুন 
+Child Span (Parent: Gateway Span ID) তৈরি করে।
+
+
+Step 4: Internal Processing & Database Tracing
+Order Service-এর ভেতর Logic Run হওয়ার সময় (যেমন SQL Database Query চালানো বা Redis Cache Check করা) পৃথক Sub-span বা Child Span তৈরি হয়।
+Database Query execution শেষে উক্ত Span Close করা হয় এবং Execution Duration save করা হয়।
+
+
+Step 5: Context Propagation to Secondary Services / Message Brokers
+Order Service যদি অন্য কোনো Service (যেমন Payment Service) অথবা Message Queue (যেমন RabbitMQ, Kafka)-এ Message পাঠায়, তবে সেটিতেও একই Trace 
+Context Inject করে পাঠানো হয়। Payment Service Header থেকে Trace Context Extract করে পূর্বের Trace ID বজায় রেখে নতুন Child Span generate করে।
+
+
+Step 6: Asynchronous Telemetry Export
+প্রতিটি Microservice (API Gateway, Order Service, Payment Service) Main Request Execution Thread-কে Block না করে Asynchronous Background Worker-এর
+মাধ্যমে OTLP Protocol (gRPC/HTTP) দিয়ে তৈরি হওয়া Span গুলোর data OpenTelemetry Collector-এ পাঠায়।
+
+
+Step 7: Collector Processing, Storage & Dashboard UI
+OpenTelemetry Collector সব Service থেকে আসা বিচ্ছিন্ন Span-গুলোকে গ্রহণ করে Trace ID অনুযায়ী একটি সুনির্দিষ্ট Hierarchy-তে সাজায়। process-কৃত Data Storage
+Backend (যেমন Grafana Tempo, Jaeger, Elasticsearch)-এ সংরক্ষিত হয়। Developer বা SRE টিম Jaeger UI বা Grafana Dashboard-এ click করলে সম্পূর্ণ
+Request-এর Waterfall Chart / Gantt Chart দেখা যায়, যা দিয়ে ঠিক কোন Service বা Database Query-তে কতো mili-second ব্যয় হয়েছে তা স্পষ্টভাবে ধরা পড়ে।
+

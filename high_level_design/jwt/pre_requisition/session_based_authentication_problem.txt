@@ -1,0 +1,329 @@
+Q : Where is the problem with Session-Based Authentication when using multiple servers?
+-> একটি application যখন শুধু একটি Server-এ চলে, তখন User login করার পরে তৈরি হওয়া Session সেই Server-এর memory বা Session Store-এ রাখা যায়। এরপর User
+আবার request করলে সেই একই Server Session ID দেখে আগের Session খুঁজে বের করতে পারে এবং User-কে authenticated হিসেবে চিনতে পারে।
+
+কিন্তু একই application-এর জন্য যখন একাধিক Server থাকে, তখন প্রতিটি request সবসময় একই Server-এ যাবে—এমন কোনো নিশ্চয়তা থাকে না। Load Balancer একটি request
+Server A-তে এবং পরের request Server B-তে পাঠাতে পারে।
+
+এখন যদি User প্রথমবার Server A-তে login করে এবং Session শুধু Server A-এর local memory-তে save থাকে, কিন্তু পরের request Server B-তে যায়, তাহলে Server B
+সেই Session খুঁজে নাও পেতে পারে। কারণ Server B-এর local memory-তে Server A তৈরি করা Session নেই।
+
+ফলে Browser সঠিক Session ID পাঠালেও Server B বলতে পারে যে এই Session-এর কোনো valid record পাওয়া যাচ্ছে না। তখন User-কে authenticated হিসেবে চেনা সম্ভব নাও
+হতে পারে। অর্থাৎ Multiple Server-এর মূল সমস্যা হলো Session ID নয়; সমস্যা হলো Session state কোন Server-এ save আছে এবং অন্য Server সেই Session state
+access করতে পারছে কি না।
+
+
+-> প্রথমে Single Server-এর ক্ষেত্রে বিষয়টি দেখা যাক
+
+ধরা যাক learnjwt.com-এর শুধু একটি Server আছে:
+
+        User Browser
+            │
+            │ Login
+            ▼
+    ┌──────────────┐
+    │    Server    │
+    └──────┬───────┘
+           │
+           │ Create Session
+           ▼
+    ┌─────────────────────┐
+    │   Session Store     │
+    │                     │
+    │ abc123xyz → User 101│
+    └─────────────────────┘
+
+User login করার পরে Server একটি Session তৈরি করল, Session ID = abc123xyz
+
+Session Store-এ:
+
+abc123xyz
+    │
+    └── user_id = 101
+
+তারপর Server Browser-কে Session ID-এর Cookie দিল, session_id=abc123xyz পরবর্তী request-এ Browser একই Session ID পাঠালে Server Session Store থেকে,
+        abc123xyz → user_id = 101 খুঁজে পেতে পারে। তাই authentication ঠিকভাবে কাজ করে।
+
+
+
+-> Multiple Server
+এখন ধরা যাক learnjwt.com application-এর traffic handle করার জন্য তিনটি Server আছে:
+
+                         ┌─────────────────┐
+                         │  Load Balancer  │
+                         └────────┬────────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    │             │             │
+                    ▼             ▼             ▼
+              ┌──────────┐  ┌──────────┐  ┌──────────┐
+              │ Server A │  │ Server B │  │ Server C │
+              └──────────┘  └──────────┘  └──────────┘
+
+User-এর request প্রথমে Load Balancer-এর কাছে যায়।
+
+Load Balancer তারপর কোনো একটি available Server-এ request পাঠায়।
+
+উদাহরণ:
+
+    Browser
+       │
+       │ Login Request
+       ▼
+    Load Balancer
+       │
+       │
+       ▼
+    Server A
+
+User-এর Login Request Server A-তে গেল। Server A credentials যাচাই করে একটি Session তৈরি করল:
+            abc123xyz → user 101
+
+যদি Server A নিজের local memory-তে Session রাখে তাহলে:
+
+Server A Memory
+
+abc123xyz
+    │
+    └── user_id = 101
+
+এখন Browser-এর কাছে Session ID আছে:
+    session_id=abc123xyz
+
+User এখন আবার learnjwt.com/profile request করল। Browser Session ID পাঠাল:
+
+    Browser
+       │
+       │ session_id=abc123xyz
+       ▼
+    Load Balancer
+
+কিন্তু Load Balancer এবার Request-টি Server B-তে পাঠিয়ে দিল:
+
+    Browser
+       │
+       │ session_id=abc123xyz
+       ▼
+    Load Balancer
+       │
+       ▼
+    Server B
+
+Server B এখন Session ID পেল, abc123xyz কিন্তু সমস্যা হলো—Session তৈরি হয়েছিল Server A-এর local memory-তে।\
+Server B-এর memory-তে সেই Session নেই:
+
+Server A Memory              Server B Memory
+
+abc123xyz                    abc123xyz
+    │                            │
+    └── user 101                 └── নেই
+
+তাই Server B, abc123xyz Session ID-এর corresponding Session খুঁজে পাচ্ছে না। ফলে Server B User-কে authenticated হিসেবে চিনতে নাও পারে।
+এখানে Browser ভুল Session ID পাঠায়নি। সমস্যা হলো, Session state Server A-এর local memory-তে ছিল, কিন্তু পরবর্তী request Server B পেয়েছে।
+
+
+-> Distributed Session Management Problem
+একাধিক Server-এর environment-এ application-এর বিভিন্ন instance-এর মধ্যে Session state কীভাবে available থাকবে—এটি একটি গুরুত্বপূর্ণ design problem।
+বিশেষ করে যদি Session local memory-তে রাখা হয়:
+
+Server A
+   │
+   └── Session A
+
+Server B
+   │
+   └── Session B
+
+Server C
+   │
+   └── Session C
+
+তাহলে একটি Server-এর তৈরি Session অন্য Server স্বাভাবিকভাবে দেখতে পাবে না। তাই Load Balancer request অন্য Server-এ পাঠালে Session lookup ব্যর্থ হতে পারে।
+
+
+-> JWT আসার আগেও multiple-server environment-এ Session-based authentication ব্যবহার করা সম্ভব ছিল এবং এর জন্য বিভিন্ন architecture ব্যবহার করা হতো।
+প্রধান approaches হলো:
+- Shared Session Store
+- Sticky Session
+
+
+1. Shared Session Store
+একটি সাধারণ solution হলো সব Server-এর জন্য একটি shared external Session Store ব্যবহার করা। উদাহরণ হিসেবে Redis ব্যবহার করা যেতে পারে।
+
+Architecture:
+
+                         ┌─────────────────┐
+                         │  Load Balancer  │
+                         └────────┬────────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    │             │             │
+                    ▼             ▼             ▼
+              ┌──────────┐  ┌──────────┐  ┌──────────┐
+              │ Server A │  │ Server B │  │ Server C │
+              └────┬─────┘  └────┬─────┘  └────┬─────┘
+                   │             │             │
+                   └─────────────┼─────────────┘
+                                 ▼
+                         ┌───────────────┐
+                         │     Redis     │
+                         │ Session Store │
+                         └───────────────┘
+
+এখানে Session কোনো Server-এর local memory-তে রাখা হচ্ছে না। বরং সবাই একই Redis Session Store ব্যবহার করছে।
+
+Q : Shared Session Store কীভাবে সমস্যাটি সমাধান করে?
+
+    Browser
+       │
+       │ Login Request
+       ▼
+    Server A
+       │
+       │ Create Session
+       ▼
+    Redis
+       │
+       └── abc123xyz → user 101
+
+প্রথমে Browser থেকে User login request পাঠায়। Load Balancer বা routing-এর মাধ্যমে সেই request Server A-তে পৌঁছায়। Server A User-এর username এবং password
+যাচাই করে। Login information সঠিক হলে Server A User-এর জন্য একটি নতুন Session তৈরি করে এবং একটি Session ID তৈরি করে, যেমন abc123xyz।
+
+এরপর Server A Session-টি নিজের local memory-তে না রেখে Redis-এ সংরক্ষণ করে। Redis-এর মধ্যে Session ID abc123xyz-এর সঙ্গে User-এর Identity information রাখা হয়।
+এবং server response এর মাধ্যমে browser-এ session id pass করে browser সেটা save করে, Browser-এর কাছে: session_id=abc123xyz
+
+এখন পরবর্তী Request Server B-তে গেল:
+
+    Browser
+       │
+       │ session_id=abc123xyz
+       ▼
+    Load Balancer
+       │
+       ▼
+    Server B
+
+Server B Redis-এ Session ID দিয়ে lookup করবে:
+
+    Server B
+       │
+       │ lookup(abc123xyz)
+       ▼
+    Redis
+       │
+       ▼
+    abc123xyz → user 101
+
+Server B তাই User-কে চিনতে পারবে। Server C-তেও একইভাবে কাজ করবে:
+
+Server A ──┐
+Server B ──┼──► Redis
+Server C ──┘
+
+অর্থাৎ যে Server Session তৈরি করুক না কেন, অন্য Server-ও shared Session Store ব্যবহার করে সেই Session খুঁজে পেতে পারে।
+
+Shared Session Store-এর মূল সুবিধা হলো এখানে Load Balancer যে Server-এই request পাঠাক:
+
+    Request → Server A → Redis → Session পাওয়া যায়
+    Request → Server B → Redis → Session পাওয়া যায়
+    Request → Server C → Redis → Session পাওয়া যায়
+
+তাই Session কোনো নির্দিষ্ট Server-এর local memory-এর উপর নির্ভর করে না। এটি distributed application-এ Session-based authentication পরিচালনার
+একটি প্রচলিত approach।
+
+
+
+2. Sticky Session
+Sticky Session যাকে Session Affinity-ও বলা হয়, এটি এমন একটি Load Balancer strategy যেখানে একই Client-এর পরবর্তী request-গুলোকে সম্ভব হলে একই Server-এ 
+পাঠানো হয়। এর মূল উদ্দেশ্য হলো—যদি User-এর Session কোনো Server-এর local memory-তে থাকে, তাহলে পরবর্তী request-গুলোও যেন সেই Server-এ যায় এবং Server সহজেই 
+সেই Session খুঁজে পায়।
+
+First Request: User Server A-তে গেল
+
+    Browser
+       │
+       │ Request
+       ▼
+    Load Balancer
+       │
+       └──────────────► Server A
+                            │
+                            └── Session
+    
+এখানে Browser থেকে একটি request আসার পরে Load Balancer সেটি Server A-তে পাঠিয়েছে। Server A User-এর request process করেছে এবং User-এর Session Server 
+A-এর local memory-তে save আছে।
+
+এরপর Load Balancer মনে রাখে বা এমন একটি affinity mechanism ব্যবহার করে যাতে এই Client-এর পরবর্তী request-গুলোও Server A-তে পাঠানোর চেষ্টা করা হয়।
+
+User প্রথমবার Login করলে
+
+    Browser
+       │
+       ▼
+    Load Balancer
+       │
+       ▼
+    Server A
+       │
+       └── Session = abc123xyz
+
+এখানে User-এর Login Request Load Balancer-এর মাধ্যমে Server A-তে পৌঁছেছে। Server A Login সফল হওয়ার পরে abc123xyz নামে একটি Session তৈরি করেছে এবং
+সেই Session Server A-এর local memory-তে রেখেছে। অর্থাৎ Server A জানে:
+        abc123xyz → Anik-এর Session
+
+এখন সমস্যা এড়ানোর জন্য Load Balancer চেষ্টা করবে Anik-এর পরবর্তী request-গুলোও Server A-তে পাঠাতে।
+
+পরবর্তী Request-গুলো একই Server-এ পাঠানো :
+Browser
+   ├── Request 1 ──► Server A
+   ├── Request 2 ──► Server A
+   ├── Request 3 ──► Server A
+   └── Request 4 ──► Server A
+
+এখানে প্রতিটি request-এর ক্ষেত্রে Load Balancer User-কে Server A-তেই পাঠানোর চেষ্টা করছে। ফলে প্রতিবার Server A তার local memory থেকে একই Session খুঁজে পেতে পারে।
+
+যেমন:
+Request 1 → Server A → abc123xyz পাওয়া যায়
+Request 2 → Server A → abc123xyz পাওয়া যায়
+Request 3 → Server A → abc123xyz পাওয়া যায়
+Request 4 → Server A → abc123xyz পাওয়া যায়
+
+ফলে Session অন্য Server-এ না থাকলেও authentication ঠিকভাবে কাজ করতে পারে।
+
+
+-> Sticky Session-এর Limitation
+- Sticky Session-এর সবচেয়ে গুরুত্বপূর্ণ limitation হলো Session একটি নির্দিষ্ট Server-এর local state-এর উপর নির্ভরশীল হয়ে পড়ে।
+ধরা যাক User Anik-এর Session Server A-তে আছে:
+
+    Server A
+       │
+       └── abc123xyz → Anik
+
+এর অর্থ হলো abc123xyz Session-এর information Server A-এর local memory-তে রয়েছে। Server A যদি হঠাৎ বন্ধ হয়ে যায় বা কোনো কারণে unavailable হয়ে যায়,
+তাহলে Server A-এর local memory-তে থাকা Session-ও আর access করা যাবে না। অর্থাৎ abc123xyz → Anik
+
+এই Session information Server A-এর memory-র সঙ্গে চলে গেছে। এরপর Load Balancer Server B-তে Request পাঠাতে পারে
+
+    Browser
+       │
+       ▼
+    Load Balancer
+       │
+       ▼
+    Server B
+
+Server A unavailable হওয়ায় Load Balancer এখন Request Server B-তে পাঠাতে পারে। কিন্তু Server B-এর local memory-তে Anik-এর abc123xyz Session নেই।
+ফলে Server B Session ID পেলেও, Session ID-এর corresponding Session state খুঁজে পাবে না। তাই Server B User Anik-কে authenticated হিসেবে চিনতে নাও পারে।
+
+
+- Traffic Distribution-এর Limitation
+Sticky Session-এর আরেকটি limitation হলো, Load Balancer একটি User-এর request-গুলোকে নির্দিষ্ট একটি Server-এ ধরে রাখে।
+
+ধরা যাক অনেক User-এর request Server A-তে বেশি জমে গেল:
+Server A → অনেক বেশি request
+Server B → কম request
+Server C → কম request
+
+যদিও Server B এবং Server C-এর capacity available থাকতে পারে, Sticky Session-এর কারণে কিছু User-এর request Server A-তেই যেতে থাকবে।
+ফলে Server-গুলোর মধ্যে traffic/load distribution সমান নাও হতে পারে।
+

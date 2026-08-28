@@ -1,0 +1,283 @@
+-> Session-Based Authentication / Stateful Authentication / Server-Side Session Authentication
+
+ধরা যাক website:
+https://learnjwt.com
+
+একজন User login করল:
+Username: anik
+Password: 1234
+
+Server username/password যাচাই করল। সঠিক হলে Server একটি random/unique Session ID তৈরি করল:
+Session ID = si-8f72k91x
+
+এখন Server-side session store-এ এমন একটি record থাকতে পারে:
+Session ID: si-8f72k91x
+User ID:    101
+Username:   anik
+Logged in:  true
+Expires:    ...
+
+এখানে অত্যন্ত গুরুত্বপূর্ণ বিষয়, si-8f72k91x নিজে User-এর সম্পূর্ণ login information নয়। এটি মূলত Server-side session-এর একটি identifier।
+
+অর্থাৎ:
+si-8f72k91x
+      │
+      ▼
+Server Session Store
+      │
+      ├── user_id = 101
+      ├── username = anik
+      ├── authenticated = true
+      └── expiry = ...
+
+তাই Server বলতে পারে: "si-8f72k91x Session ID-এর সঙ্গে User ID 101-এর authenticated session আছে।"
+
+
+-> Login সফল হওয়ার পরে Server Browser-কে একটি HTTP Response পাঠায়, এবং সেই Response-এর মধ্যে Set-Cookie header ব্যবহার করে Browser-কে একটি Cookie save করতে বলে
+
+    Server
+       │
+       │ Set-Cookie: session_id=si-8f72k91x
+       ▼
+    Browser
+
+Browser cookie-টি সংরক্ষণ করে। ধরা যাক Browser-এর cookie storage-এ এখন:
+
+    learnjwt.com
+        └── session_id = si-8f72k91x
+
+এখানে learnjwt.com-এর সঙ্গে cookie-টির association আছে।
+
+
+-> User এখন request করল: https://learnjwt.com/profile
+
+Browser দেখে: এই request-এর destination learnjwt.com এবং আমার কাছে learnjwt.com-এর জন্য matching cookie আছে। তাই Browser request-এর সঙ্গে cookie পাঠায়:
+GET /profile HTTP/1.1
+Host: learnjwt.com
+Cookie: session_id=si-8f72k91x
+
+তারপর Server পায়: session_id = si-8f72k91x
+
+Server নিজের session store-এ খুঁজে:
+
+si-8f72k91x
+       │
+       ▼
+Session Store
+       │
+       ▼
+User ID = 101
+Username = anik
+Authenticated = true
+
+তখন Server বুঝতে পারে: এই request-এর Session ID-এর corresponding valid session আছে এবং সেই session User ID 101-এর।
+তারপর /profile access করতে দেয়।
+
+
+Q : এখন anik.com-এ গেলে কি same(session_id=si-8f72k91x) Session ID পাঠাবে?
+-> সাধারণ অবস্থায় না।
+
+ধরা যাক Browser-এর কাছে আছে:
+    learnjwt.com
+        └── session_id = si-8f72k91x
+
+এখন Browser request করল: https://anik.com
+
+Browser learnjwt.com-এর cookie দেখে এবং বুঝবে, Cookie belongs to: learnjwt.com
+কিন্তু current destination: anik.com
+
+তাই learnjwt.com-এর cookie সাধারণভাবে anik.com-এ পাঠাবে না।
+
+অর্থাৎ:
+
+https://learnjwt.com/profile
+        │
+        │ Cookie:
+        │ session_id=si-8f72k91x
+        ▼
+   learnjwt.com Server
+
+কিন্তু:
+
+https://anik.com/profile
+        │
+        │ learnjwt.com-এর cookie
+        │ পাঠানো হবে না
+        ▼
+      anik.com
+
+
+-> ধরা যাক Server cookie set করল,
+        Set-Cookie: session_id=si-8f72k91x; Domain=learnjwt.com; Path=/
+Browser এটিকে learnjwt.com domain-এর cookie হিসেবে save করবে।
+
+এখানে Path=/ মানে হলো এই learnjwt.com domain-এর কোন কোন URL path-এর request-এ Browser Cookie-টি পাঠাবে, তার scope নির্ধারণ করা।
+
+    Domain=learnjwt.com
+            ↓
+    কোন domain-এর জন্য Cookie
+
+          Path=/
+            ↓
+    সেই domain-এর কোন path-এর জন্য Cookie
+
+
+Path=/ or `/` হলো domain-এর root path। তাই learnjwt.com-এর root-এর অধীন matching path-গুলোর request-এ Cookie-টি পাঠাবে।
+
+যেমন:
+https://learnjwt.com/
+https://learnjwt.com/login
+https://learnjwt.com/profile
+https://learnjwt.com/settings
+https://learnjwt.com/api/me
+https://learnjwt.com/products/123
+
+এগুলোর path:
+/
+/login
+/profile
+/settings
+/api/me
+/products/123
+
+এগুলো Path=/-এর scope-এর মধ্যে পড়ে। তাই Browser প্রয়োজন অনুযায়ী Cookie পাঠাতে পারে: Cookie: session_id=si-8f72k91x
+
+কিন্তু Path=/profile হলে, ধরা যাক Cookie এমনভাবে set করা হলো:
+    Set-Cookie: session_id=si-8f72k91x; Domain=learnjwt.com; Path=/profile
+
+এখন Cookie-টির path scope অনেক বেশি নির্দিষ্ট। এটি /profile এবং তার অধীন path-এর request-এর জন্য match করতে পারে:
+
+https://learnjwt.com/profile
+https://learnjwt.com/profile/settings
+https://learnjwt.com/profile/edit
+
+কিন্তু:
+https://learnjwt.com/login
+https://learnjwt.com/products
+https://learnjwt.com/api/me
+
+এগুলোর path /profile দিয়ে শুরু না হওয়ায় এই Cookie সাধারণভাবে সে সব request-এ পাঠানো হবে না।
+
+
+-> Session ID নিজে URL-wise নয়। Session ID হলো Cookie-এর value; Domain এবং Path হলো Cookie-এর attributes; Browser এই attributes ব্যবহার করে
+Cookie কোন request-এ পাঠাবে কি না তা নির্ধারণ করে।
+
+    Cookie
+    │
+    ├── Name  = session_id
+    ├── Value = si-8f72k91x
+    ├── Domain = learnjwt.com
+    └── Path = /
+            │
+            ▼
+    Browser receives a request
+            │
+            ▼
+    Browser checks whether this Cookie's
+    Domain/Path rules match the request
+            │
+            ├── Match → Cookie is eligible to be sent
+            │
+            └── No match → Cookie is not sent
+
+
+-> Server সাধারণত Session ID দেখে সরাসরি User-এর নাম decode করে না, বরং traditional server-side session-এর ক্ষেত্রে সাধারণত:
+
+    Browser
+       │
+       │ session_id=si-8f72k91x
+       ▼
+    learnjwt.com Server
+       │
+       │ lookup(si-8f72k91x)
+       ▼
+    Session Store
+       │
+       │ user_id = 101
+       │ username = anik
+       │ authenticated = true
+       ▼
+    Server knows:
+    User = anik
+
+Browser শুধু session_id=si-8f72k91x পাঠায় → Server সেই Session ID দিয়ে Session Store-এ session খুঁজে → session-এর ভিতরের User information ও authentication state পায় → Server বুঝতে পারে request-টি কোন authenticated User-এর।
+
+
+-> User logout request পাঠাল:
+
+POST /logout
+Cookie: session_id=si-1234
+
+Server Session ID দেখে:
+
+    si-1234
+        │
+        ▼
+    Session Store
+        │
+        ▼
+    User = anik
+
+Server বুঝল কোন session logout করতে হবে। তারপর Server সাধারণত session-টিকে invalidate/delete করে। যেমন:
+
+Before logout:
+
+Session Store
+
+si-1234
+   │
+   ├── user_id = 101
+   ├── username = anik
+   └── authenticated = true
+
+After logout:
+
+Session Store
+
+si-1234
+   │
+   └── no longer valid
+
+অর্থাৎ logout-এর পর si-1234 আর valid authenticated session হিসেবে ব্যবহার করা যাবে না।
+
+
+-> server এর session delete করার পরও Browser-এর কাছে আবার আলাদাভাবে Cookie থাকে:
+
+Browser Cookie
+
+learnjwt.com
+    │
+    └── session_id = si-1234
+
+Logout-এর সময় Server সাধারণত Browser-এর এই Cookie-টিকেও expire/delete করার নির্দেশ দেয়। এটি Set-Cookie response-এর মাধ্যমে করা যায়। যেমন, Server Cookie-টির
+expiration end/invalid set করে Browser-কে Cookie remove করার নির্দেশ দিতে পারে।
+
+    Logout Request
+          │
+          ▼
+        Server
+          │
+          ├── Session invalidate/delete
+          │
+          └── Set-Cookie → expire session cookie
+                                │
+                                ▼
+                             Browser
+                                │
+                                ▼
+                        Cookie removed/expired
+
+তবে Server-side Session invalidate হওয়া এবং Browser-side Cookie remove হওয়া দুটি পৃথক ঘটনা। Browser-এর কাছে পুরোনো session_id Cookie থেকে গেলেও, Server-side
+Session invalidated হয়ে গেলে সেই Session ID আর valid authenticated session হিসেবে কাজ করবে না।
+
+
+Q : Why is it called `Session-Based Authentication`?
+-> এখানে User login করার পরে Server একটি Session তৈরি করে এবং Browser-কে একটি Session ID দেয়। পরবর্তী request-এ Browser Session ID পাঠায়, আর Server সেই ID দিয়ে Session খুঁজে
+User-এর authentication status যাচাই করে। এজন্য নাম Session-Based Authentication — কারণ authentication মূলত Session-এর ওপর ভিত্তি করে কাজ করছে।
+
+Q : Why is it called `Stateful Authentication`?
+-> এখানে Server User-এর authentication সম্পর্কিত state Server-side-এ সংরক্ষণ করে। Server-কে মনে রাখতে হচ্ছে:
+    session_id=si-1234 কোন User-এর এবং সেই Session authenticated কি না।
+
+অর্থাৎ Server-এর কাছে User-এর authentication state রয়েছে (stateful)। তাই নাম Stateful Authentication।
+

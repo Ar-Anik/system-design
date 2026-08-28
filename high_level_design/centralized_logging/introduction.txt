@@ -1,0 +1,60 @@
+1. Centralized Logging কী?
+Microservices architecture-এ সাধারণত অনেকগুলো ছোট ছোট independent service থাকে। প্রতিটি service স্বাধীনভাবে run করে এবং নিজেদের কার্যক্রমের log generate করে। Centralized logging হলো
+এমন একটি পদ্ধতি বা ব্যবস্থা, যেখানে একটি distributed environment-এর সমস্ত server, container এবং application থেকে log data সংগ্রহ করে একটি নির্দিষ্ট বা কেন্দ্রীয় স্থানে (central location)
+সংরক্ষণ (storage) করা হয়। এর মাধ্যমে একটি একক dashboard থেকে পুরো system-এর log monitor ও Analysis করা যায়।
+
+2. কেন এটি প্রয়োজন এবং এটি কী সমস্যা সমাধান করে?
+Monolithic application-এ সব log একটি নির্দিষ্ট file বা server-এ থাকে, তাই log check করা সহজ। কিন্তু microservices-এ যদি ১০০টি আলাদা service থাকে, তবে ১০০টি ভিন্ন জায়গায় log generate হবে।
+Centralized logging নিচের প্রধান সমস্যাগুলো সমাধান করে:
+
+- Troubleshooting-এ delay : কোনো error হলে প্রতিটি server-এ ঢুকে log check করার প্রয়োজন নেই। এক জায়গা থেকে search করেই সমস্যা খুঁজে বের করা যায়।
+
+- Lack of Request Tracing : একটি user request যখন একাধিক service-এর মধ্য দিয়ে যায়, তখন Correlation ID ব্যবহার করে পুরো request-এর যাত্রা track করা যায়।
+
+- Data loss : Container বা Pod crash করলে বা restart হলে local log delete হয়ে যায়। Central storage-এ থাকায় log সবসময় নিরাপদ থাকে।
+
+- Security ও Audit : সমস্ত internal log এক জায়গায় থাকায় security analysis এবং audit করা সহজ হয়।
+
+
+3. Centralized Logging-এর Core Component
+Centralized logging-কে প্রধানত কয়েকটি core component-এ ভাগ করা যায়:
+
+- Log Shipper / Forwarder: এটি প্রতিটি server বা container-এ run করে। এর কাজ হলো file বা console থেকে log read করে central server-এ পাঠানো। (উদাহরণ: Filebeat, Fluent Bit)।
+
+- Log Aggregator / Processor: বিভিন্ন source থেকে আসা logগুলো receive করে, নির্দিষ্ট format-এ parse করে এবং প্রয়োজনীয় filtering করে। (উদাহরণ: Logstash, Fluentd)।
+
+
+
+- Message Broker (Optioanl কিন্তু প্রয়োজনীয়): প্রচুর পরিমাণ log-এর কারণে system যেন overload না হয়, তার জন্য সাময়িকভাবে logগুলো buffer করে রাখে। (উদাহরণ: Apache Kafka, RabbitMQ)।
+
+- Storage Engine: process করা logগুলো দীর্ঘমেয়াদে save করে রাখে এবং দ্রুত search করার জন্য index তৈরি করে। (উদাহরণ: Elasticsearch, Amazon OpenSearch)।
+
+- Visualization UI: সংরক্ষিত logগুলো user-friendly dashboard-এ প্রদর্শন করে। (উদাহরণ: Kibana, Grafana)।
+
+
+4. Centralized Logging-এর Architecture
+একটি standard centralized logging architecture সাধারণত ELK Stack (Elasticsearch, Logstash, Kibana) বা EFK Stack (Elasticsearch, Fluentd, Kibana) pattern মেনে
+চলে। এর data flow বা architecture নিচের মতো হয়:
+
+Microservices → Log Shippers → Message Broker → Log Aggregator → Search Engine & Storage → Visualization Dashboard
+
+
+5. How centralized Logging Work
+
+1. Log Generation: Application Level
+প্রতিটি microservice তার নিজস্ব কার্যক্রমের log তৈরি করে এবং standard output (stdout) বা file-এ write করে।
+
+2. Log Collection: Shipper Level
+Log Shipper (যেমন: Filebeat) সেই logগুলো পড়ে এবং সংগ্রহের কাজ করে। এটি automatic এবং continuous একটি প্রক্রিয়া।
+
+3. Transport and Buffering: Broker Level
+সংগৃহীত logগুলো Message Broker-এ পাঠানো হয়। এটি data হারানোর ঝুঁকি কমায় এবং system-কে overload-এর হাত থেকে রক্ষা করে।
+
+4. Parsing and Enrichment: Aggregator Level
+Logstash বা Fluentd logগুলোকে receive করে। এরপর text বা data থেকে অপ্রয়োজনীয় অংশ বাদ দেয়, নির্দিষ্ট field-এ ভাগ করে এবং প্রয়োজনে নতুন data (যেমন: IP থেকে Location) যুক্ত করে।
+
+5. Indexing and Storage: Database Level
+Process করা logগুলো Elasticsearch বা অন্য কোনো data storage-এ index করা হয়, যাতে পরবর্তীতে অত্যন্ত দ্রুতগতিতে search করা যায়।
+
+6. Visualization: UI Level
+Kibana-এর মতো tool-এর মাধ্যমে সংরক্ষিত dataগুলো dashboard-এ graph, chart বা log line হিসেবে প্রদর্শিত হয়।

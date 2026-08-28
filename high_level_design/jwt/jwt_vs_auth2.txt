@@ -1,0 +1,38 @@
+JWT (JSON Web Token) এবং OAuth 2.0 একে অপরের বিকল্প নয়। কারণ এরা একই ধরনের জিনিস নয় এবং একই সমস্যা সমাধান করে না।
+
+JWT হলো একটি Token Format, আর OAuth 2.0 হলো একটি Authorization Framework। তাই OAuth 2.0-এর কোনো একটি flow-তে JWT ব্যবহার
+করা সম্ভব, কিন্তু OAuth 2.0 ব্যবহার করার জন্য JWT বাধ্যতামূলক নয়।
+
+
+-> OAuth 2.0 হলো একটি Authorization Framework।
+
+[Clinet -> Client হলো সেই application বা software component, যেটি Resource Owner-এর authorization-এর ভিত্তিতে protected resource access করতে চায়।
+উদাহরণ: একটি third-party application Google-এর protected API access করতে চায়।]
+
+OAuth 2.0 এর উদ্দেশ্য হলো একজন Resource Owner-এর অনুমোদনের ভিত্তিতে একটি Client-কে কোনো Resource Server-এ থাকা protected resource access করার জন্য
+authorization দেওয়ার standard mechanism নির্ধারণ করা। এখানে গুরুত্বপূর্ণ বিষয় হলো:
+        OAuth 2.0 মূলত delegated authorization নিয়ে কাজ করে।
+
+অর্থাৎ, Resource Owner-এর credentials সরাসরি Client-এর কাছে না দিয়ে Client-কে নির্দিষ্ট resource access করার জন্য একটি Access Token দেওয়া হয়।
+উদাহরণ হিসেবে:
+একটি third-party application যদি Google-এর কোনো protected resource access করতে চায়, তাহলে সেই application-এর কাছে Google account-এর password দেওয়ার
+প্রয়োজন নেই। OAuth 2.0 authorization process-এর মাধ্যমে user Google-এর কাছে authorization দেয় এবং Client একটি Access Token পায়। তারপর Client সেই Access
+Token ব্যবহার করে অনুমোদিত resource access করে।
+
+OAuth 2.0 হলো একটি Authorization Framework, যা কোনো Resource Owner-এর অনুমোদনের ভিত্তিতে একটি Client-কে Resource Owner-এর protected resource নির্দিষ্ট
+scope অনুযায়ী access করার জন্য authorization দেওয়ার standard পদ্ধতি নির্ধারণ করে।
+
+
+| বিষয়                      | JWT                                                  | OAuth 2.0                                                                                   |
+| -----------------------  | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| কী?                      | Token Format                                         | Authorization Framework                                                                     |
+| মূল উদ্দেশ্য                 | Claims বহন এবং Token integrity/authenticity যাচাই      | Delegated Authorization                                                                     |
+| নিজে Token?              | হ্যাঁ, JWT একটি Token                                    | OAuth 2.0 নিজে Token নয়                                                                     |
+| Authentication          | Authentication system-এ credential হিসেবে ব্যবহৃত হয়      | নিজে authentication protocol নয়                                                             |
+| Authorization           | Authorization information বহন করতে পারে                | মূল উদ্দেশ্য Authorization                                                                  |
+| Access Token            | JWT Access Token হতে পারে                              | Access Token ব্যবহারের framework                                                            |
+| Access Token-এর format  | JWT হতে পারে                                           | JWT বা opaque token হতে পারে                                                                |
+| OAuth 2.0 প্রয়োজন         | না                                                    | —                                                                                           |
+| JWT প্রয়োজন               | —                                                    | না                                                                                          |
+| Third-party application | JWT ব্যবহারে বাধ্যতামূলক নয়                                 | Client হিসেবে third-party application হতে পারে                                              |
+| Password sharing        | JWT নিজে এই বিষয়টি নির্ধারণ করে না                          | OAuth 2.0 delegated access-এ Client-এর কাছে Resource Owner-এর password দেওয়ার প্রয়োজন হয় না |

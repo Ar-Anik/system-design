@@ -1,0 +1,373 @@
+ধরা যাক একটি microservices system-এ এই services আছে:
+
+                    Git Repository
+                         |
+                         |
+                         v
+                  +---------------+
+                  | Config Server |
+                  +---------------+
+                    /     |      \
+                   /      |       \
+                  v       v        v
+             Order      Payment   Inventory
+             Service    Service   Service
+             (Client)   (Client)  (Client)
+
+
+এখানে Order Service, Payment Service, Inventory Service হলো Config Client এবং Config Server হলো centralized configuration provider।
+
+1. প্রথমে configuration Git Repository-তে রাখা হয়
+প্রথমে বিভিন্ন microservice এবং বিভিন্ন environment-এর configuration Git repository-তে রাখা হয়। উদাহরণ:
+
+config-repo/
+│
+├── order-service.yml
+├── payment-service.yml
+├── inventory-service.yml
+│
+├── order-service-dev.yml
+├── order-service-prod.yml
+│
+├── payment-service-dev.yml
+└── payment-service-prod.yml
+
+উদাহরণ হিসেবে:
+# order-service-dev.yml
+
+server:
+  port: 8001
+
+database:
+  host: localhost
+  port: 5432
+
+logging:
+  level: DEBUG
+
+আর production-এর জন্য:
+# order-service-prod.yml
+
+server:
+  port: 9001
+
+database:
+  host: prod-db
+  port: 5432
+
+logging:
+  level: INFO
+
+এখানে Git repository হলো configuration-এর version-controlled source। অর্থাৎ configuration-এর পরিবর্তন Git-এর মাধ্যমে track করা যায়।
+
+
+2. Config Server Git Repository-এর সাথে connected থাকে
+Config Server-এর নিজের configuration-এ Git repository-এর location configure করা থাকে।
+অর্থাৎ:
+
+                 Git Repository
+                       |
+                       | configuration source
+                       v
+                Config Server
+
+Config Server Git repository থেকে configuration data access করতে পারে।
+
+প্রতিটি Config Client request-এর সময়, Config Server-কে অবশ্যই remote Git Repository-তে গিয়ে নতুন করে configuration file fetch করতে হবে—এমন নয়।
+Spring Cloud Config Server যখন Git backend ব্যবহার করে, তখন repository-এর একটি local working copy/clone Config Server-এর environment-এর
+মধ্যে manage করতে পারে। Config Server সেই local repository থেকে configuration read করতে পারে।
+
+Config Server-এর local state প্রয়োজন অনুযায়ী update করতে পারে। remote Git Repository থেকে changes fetch/pull হওয়ার প্রয়োজন হলে Update হতে পারে।
+
+
+3. Config Client start
+এখন Order Service start হলো। Order Service হলো Config Client। Startup-এর সময় Order Service-এর configuration-এর একটি অংশ Config Server থেকে আসতে পারে।
+
+    Order Service
+          |
+          | configuration request
+          v
+    Config Server
+
+মাইক্রোসার্ভিস চালু হলে এটি সবার আগে Config Server-এর সাথে যোগাযোগ করে, এটি সব ক্ষেত্রে universally true নয়। কোন framework এবং configuration mechanism ব্যবহার
+করা হচ্ছে তার উপর startup sequence নির্ভর করে।
+
+Config Client startup-এর early phase-এ Config Server থেকে প্রয়োজনীয় external configuration retrieve করতে পারে।
+
+
+4. Config Client নিজের পরিচয় এবং environment জানায়
+Order Service Config Server-এর কাছে request পাঠানোর সময় সাধারণত application name এবং active profile-এর মতো তথ্য ব্যবহার করে।
+
+Conceptually:
+Application Name = order-service
+Profile          = dev
+Label            = main
+
+তখন Config Server বুঝতে পারে:
+
+কোন application-এর configuration?
+        +
+কোন environment/profile?
+        +
+কোন Git label/branch?
+
+উদাহরণ:
+
+    Order Service
+         |
+         | "I am order-service"
+         | "My profile is dev"
+         v
+    Config Server
+
+
+5. Config Server appropriate configuration locate করে
+Config Client Config Server-কে নিজের application name এবং profile জানায়। Config Server সেই information অনুযায়ী Git Repository-তে কোন configuration
+files প্রযোজ্য, সেগুলো নির্ধারণ করে এবং সেগুলোর property একত্র করে একটি configuration response তৈরি করে।
+
+ধরা যাক:
+application = order-service
+profile = dev
+
+এর অর্থ:
+application = কোন service-এর configuration দরকার → order-service
+profile = কোন environment-এর configuration দরকার → dev
+
+এখন Git Repository-তে আছে:
+order-service.yml
+order-service-dev.yml
+payment-service.yml
+payment-service-dev.yml
+
+Config Server-এর দরকার order-service + dev configuration। তাই payment-service সম্পর্কিত file এখানে relevant নয়।
+
+Q : order-service.yml কী?
+এটি order-service-এর common/default configuration।
+
+উদাহরণ:
+database:
+  host: localhost
+  port: 5432
+
+logging:
+  level: INFO
+
+order:
+  timeout: 30
+
+এই configuration order-service-এর জন্য সাধারণভাবে প্রযোজ্য।
+
+
+Q : order-service-dev.yml কী?
+এটি order-service-এর dev profile-specific configuration।
+
+উদাহরণ:
+database:
+  host: dev-db
+
+logging:
+  level: DEBUG
+
+এখানে database.host এবং logging.level-এর জন্য dev-specific value দেওয়া হয়েছে।
+
+
+Q : Config Server কী করে?
+
+Request:
+application = order-service
+profile = dev
+
+Config Server applicable configuration হিসেবে order-service.yml এবং order-service-dev.yml কে বিবেচনা করে। তারপর applicable property sources-এর
+properties একত্র করে final configuration Environment তৈরি করে।
+
+ধরা যাক:
+order-service.yml:
+
+database:
+  host: localhost
+  port: 5432
+
+logging:
+  level: INFO
+
+order:
+  timeout: 30
+
+এবং:
+
+order-service-dev.yml:
+
+database:
+  host: dev-db
+
+
+logging:
+  level: DEBUG
+
+তাহলে final effective configuration conceptually হবে:
+
+database:
+  host: dev-db
+  port: 5432
+
+logging:
+  level: DEBUG
+
+order:
+  timeout: 30
+
+এখানে গুরুত্বপূর্ণ বিষয় হলো:
+
+database.host → dev file-এর value dev-db
+database.port → dev file-এ নেই, তাই common file-এর 5432
+logging.level → dev file-এর DEBUG
+order.timeout → dev file-এ নেই, তাই common file-এর 30
+
+অর্থাৎ profile-specific configuration সাধারণ configuration-এর উপর override করতে পারে।
+
+তাহলে,
+order-service.yml থেকে common properties নেওয়া হয় এবং order-service-dev.yml থেকে dev-specific properties নেওয়া হয়। একই property দুই জায়গায় থাকলে
+applicable precedence অনুযায়ী একটি value effective হয়। তারপর Config Server সেই resolved configuration Config Client-কে response হিসেবে দেয়।
+
+Config Client
+application = order-service
+profile = dev
+        |
+        v
+Config Server
+        |
+        | applicable configuration খোঁজে
+        v
+order-service.yml
+        +
+order-service-dev.yml
+        |
+        | properties resolve + precedence apply
+        v
+Final Environment Response
+        |
+        v
+Config Client
+
+
+6. Config Server Configuration Response তৈরি করে
+Config Server যখন Config Client-এর request অনুযায়ী applicable configuration resolve করে, তখন সেই resolved configuration-এর ভিত্তিতে একটি Environment
+response তৈরি করে। ধরা যাক Config Client request করেছে:
+
+application = order-service
+profile = dev
+
+Config Server applicable configuration resolve করার পর একটি response return করতে পারে, যার structure conceptually এমন:
+{
+  "name": "order-service",
+  "profiles": ["dev"],
+  "label": "main",
+  "propertySources": [
+    {
+      "name": "order-service-dev.yml",
+      "source": {
+        "server.port": 8001,
+        "database.host": "localhost",
+        "logging.level": "DEBUG"
+      }
+    }
+  ]
+}
+
+এখানে কয়েকটি অংশ গুরুত্বপূর্ণ।
+
+- name
+"name": "order-service"
+এটি কোন application-এর জন্য configuration response তৈরি হয়েছে তা নির্দেশ করে।
+
+- profiles
+"profiles": ["dev"]
+এটি কোন profile-এর configuration resolve করা হয়েছে তা নির্দেশ করে। এখানে dev profile ব্যবহার করা হয়েছে।
+
+- label
+"label": "main"
+এটি Git repository-এর কোন label/version reference ব্যবহার করা হয়েছে তা নির্দেশ করতে পারে।
+
+
+- propertySources
+"propertySources": [
+    ...
+]
+এখানে configuration-এর বিভিন্ন property source-এর information থাকে।
+
+উদাহরণ:
+order-service.yml
+order-service-dev.yml
+
+প্রতিটি applicable source থেকে resolved configuration, properties response-এর মধ্যে থাকতে পারে।
+
+Config Server Config Client-এর request অনুযায়ী applicable configuration resolve করে একটি Environment response তৈরি করে। এই response-এ configuration
+properties-এর পাশাপাশি application name, active profiles, label এবং property sources-এর মতো information থাকতে পারে। Config Server-এর HTTP API-এর
+মাধ্যমে এই Environment response সাধারণত JSON representation হিসেবে Config Client-এর কাছে return করা হয়।
+
+
+7. Git Commit বা Push নিজে থেকে Automatic Refresh করে না
+Git repository-তে কোনো configuration মান (যেমন: logging.level: INFO থেকে logging.level: DEBUG) পরিবর্তন করে git commit ও git push করলেই সাথে সাথে সব Config
+Client নতুন configuration পেয়ে যায় না। এটি সিস্টেমের default behavior নয়। Git মূলত একটি version control storage হিসেবে কাজ করে। Git-এর পক্ষে নিজে থেকে কোনো active
+থাকা microservices-কে push notification বা signal পাঠানো সম্ভব নয়।
+
+runtime-এ microservices restart না করে dynamic configuration refresh করার জন্য অতিরিক্ত mechanism এবং architecture প্রয়োজন হয়।
+
+Developer
+    |
+    | git push
+    v
+Git Repository
+    |
+    | webhook/event
+    v
+Config Server / Refresh Mechanism
+    |
+    | publish configuration-change event
+    v
+Message Broker
+    |
+    +----------+----------+
+    |          |          |
+    v          v          v
+ Order      Payment    Inventory
+ Service     Service     Service
+
+Note : এখানে Message Broker (যেমন: Apache Kafka বা RabbitMQ) একটি mandatory component নয়। তবে distributed system-এ সকল microservices-এর কাছে পরিবর্তন Broadcast
+করার জন্য Message Broker ব্যবহার করা হয়।
+
+- Git Push: Developer নতুন configuration লিখে Git repository-তে git push করে।
+- Webhook Signal: Git repository থেকে একটি Webhook তৈরি হয়ে Config Server-এর নির্দিষ্ট refresh endpoint-এ একটি request পাঠায়।
+- Event Publish: Config Server তখন একটি configuration-change event তৈরি করে Message Broker-এ publish করে।
+- Broadcast Notification: Message Broker এই event-টি সব microservices (যেমন: Order Service, Payment Service, Inventory Service)-এর কাছে পাঠিয়ে দেয়।
+
+8. Client Event Processing এবং Update Fetching
+    Refresh Event
+          |
+          v
+    Order Service
+          |
+          | request updated configuration
+          v
+    Config Server
+          |
+          v
+    Updated Configuration
+          |
+          v
+    Order Service
+
+যখন কোনো নির্দিষ্ট microservices (যেমন: Order Service) Message Broker থেকে refresh event গ্রহণ করে:
+- Order Service বুঝতে পারে যে তার configuration পরিবর্তন হয়েছে।
+- এটি সরাসরি Config Server-এর কাছে একটি নতুন request পাঠায়।
+- Config Server থেকে সর্বশেষ update করা configuration ডেটা নিয়ে আসে।
+- Order Service তার internal মেমোরিতে নতুন value load করে নেয়।
+
+
+9. সব Configuration Runtime-এ Automatically Change হয় না
+সব configuration runtime-এ রিস্টার্ট ছাড়া পরিবর্তন করা সম্ভব নয়।
+
+- Refreshable Configuration: যেসব code বা component dynamic refresh support করে (যেমন Spring-এ @RefreshScope দ্বারা চিহ্নিত component), কেবল সেগুলোর মান runtime-এ restart ছাড়াই পরিবর্তন হতে পারে।
+
+- Non-Refreshable Configuration: ডাটাবেস সংযোগের main pooling setup, Security filter chain বা সিস্টেমের নির্দিষ্ট কিছু low-level core configuration পরিবর্তন করতে হলে application restart করা আবশ্যক।
+

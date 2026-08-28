@@ -1,0 +1,65 @@
+-> W3C Trace Context হলো World Wide Web Consortium (W3C) এর তৈরি করা একটি Global Standard। সহজ কথায়, Distributed Microservices-এর
+মধ্যে Tracing Data আদান-প্রদানের জন্য এটি একটি সুনির্দিষ্ট HTTP Header Format (traceparent এবং tracestate) নির্ধারণ করে দেয়। এর প্রধান উদ্দেশ্য হলো—বিভিন্ন
+Company-এর বা ভিন্ন ভিন্ন Tracing Tools (যেমন: OpenTelemetry, Jaeger, Datadog) যেন একে অপরের Data সহজেই বুঝতে পারে এবং সম্পূর্ণ transaction কোনো
+বাধা ছাড়াই নিখুঁতভাবে Track করা যায়।
+
+
+-> Distributed Tracing-এ একটি Request যখন Microservices Architecture-এর বিভিন্ন system-এর মধ্য দিয়ে যায়, তখন সেই Request-এর সম্পূর্ণ যাত্রা track করার জন্য যে পদ্ধতি ব্যবহার করা হয়, তাকে Context Propagation বলে।
+OpenTelemetry এবং অন্যান্য আধুনিক Tracing Tools সাধারণত W3C Trace Context standard অনুসরণ করে কাজ করে। এর মাধ্যমে HTTP Request-এর Header-এ Tracing Data যুক্ত করে এক Service থেকে অন্য Service-এ পাঠানো হয়।
+
+W3C Trace Context-এর মাধ্যমে মূলত দুটি Header যুক্ত করা হয়: traceparent এবং tracestate।
+
+traceparent Header-এর গঠন:
+উদাহরণস্বরূপ: traceparent: 00-a0892f3577b34da6a3ce929d0e0e4736-f03067aa0ba902b7-01
+
+এর ৪টি অংশ রয়েছে:
+- Version (00): এটি specification-এর version নির্দেশ করে।
+
+- Trace ID (a0892f3577b34da6a3ce929d0e0e4736): এটি ১৬-byte hexadecimal string বা text। সম্পূর্ণ transaction-এর জন্য এটি একটি unique ID। Request যতগুলো Service-এর মধ্য দিয়েই যাক না কেন, Trace ID সম্পূর্ণ যাত্রায়
+অপরিবর্তিত থাকে।
+
+- Parent ID (f03067aa0ba902b7): এটি ৮-byte hexadecimal string। এটি caller Service-এর Span ID নির্দেশ করে, যা মূলত বর্তমান Request-এর parent হিসেবে কাজ করে।
+
+- Trace Flags (01): এটি নির্দেশ করে Request-টি sampled করা হয়েছে কি না, অর্থাৎ Tracing Data backend storage-এ সংরক্ষণ করা হবে কি না।
+
+
+-> Context Propagation-এর main process মূলত দুটি ধাপে সম্পন্ন হয়:
+- Injection: যখন কোনো Service বাইরের অন্য কোনো Service-কে call করে, তখন Tracing Data (Trace ID, Parent ID) outgoing HTTP Header-এ write করা হয়।
+
+- Extraction: receiving Service incoming Request-এর Header থেকে সেই Data সংগ্রহ করে এবং processing-এর জন্য নিজের internal memory-তে সেট করে।
+
+-> সম্পূর্ণ Flow (API Gateway থেকে Payment Service)
+যেহেতু এই process একটি নির্দিষ্ট sequence মেনে কাজ করে, নিচে এর বিস্তারিত ধাপ উল্লেখ করা হলো:
+
+1. Request Initialization: Client to API Gateway
+- Client থেকে যখন প্রথম HTTP Request API Gateway-তে পৌঁছায়, তখন কোনো পূর্ববর্তী Tracing Context থাকে না।
+- OpenTelemetry এই Request-এর জন্য automatic ভাবে একটি নতুন Trace ID এবং একটি Root Span তৈরি করে।
+- Trace ID: T1 (সম্পূর্ণ transaction-এর জন্য unique)
+- Span ID: S1 (API Gateway-এর নিজস্ব Span)
+- এই ধাপে কোনো parent ID থাকে না।
+
+2. Context Injection & Extraction: API Gateway to Order Service
+- API Gateway যখন Order Service-কে call করে, তখন HTTP Header-এ traceparent inject বা write করা হয়।
+- Header-এ Trace ID (T1) এবং parent ID হিসেবে নিজের Span ID (S1) পাঠানো হয়।
+- Order Service সেই Header থেকে Context extract করে এবং একটি নতুন child Span তৈরি করে।
+    Trace ID: T1 (অপরিবর্তিত)
+    Span ID: S2 (Order Service-এর নতুন Span)
+    Parent ID: S1 (API Gateway-এর Span)
+
+3. Further Propagation: Order Service to Payment Service
+- Order Service যখন Payment Service-কে call করে, তখন পুনরায় traceparent Header-এ নতুন Context write করা হয়।
+- এবার parent ID হিসেবে Order Service নিজের Span ID (S2) পাঠায়।
+- Payment Service Header-টি receive করে এবং আরেকটি child Span তৈরি করে।
+Trace ID: T1 (অপরিবর্তিত)
+Span ID: S3 (Payment Service-এর নতুন Span)
+Parent ID: S2 (Order Service-এর Span)
+
+-> Span Hierarchy (Tree Structure)
+Context Propagation-এর ফলে Tracing backend (যেমন—Jaeger বা Zipkin) Data-গুলোকে একত্রিত করে একটি Tree বা Graph তৈরি করে, যা নিচের মতো দেখায়:
+
+    Trace ID: T1
+    └── API Gateway (Span ID: S1)
+        └── Order Service (Span ID: S2)
+            └── Payment Service (Span ID: S3)
+
+এই Hierarchy-এর মাধ্যমে একটি transaction-এর কোনো অংশে ঠিক কতটুকু সময় লেগেছে বা কোন Service-এ error হয়েছে, তা খুব সহজেই নির্ধারণ করা যায়।

@@ -1,0 +1,131 @@
+Q : What is Config Server?
+-> Config Server হলো Distributed system বা Microservices আর্কিটেকচারের একটি সেন্ট্রালাইজড (কেন্দ্রীয়) সার্ভার বা অ্যাপ্লিকেশন, যার মূল কাজ হলো অন্যান্য সকল মাইক্রোসার্ভিসের কনফিগারেশন
+প্রপার্টিগুলো (যেমন: ডাটাবেস URL, API keys, পোর্ট নম্বর) এক জায়গায় সংরক্ষণ এবং পরিচালনা করা। এটি মাইক্রোসার্ভিসগুলোর জন্য কনফিগারেশন ডেটার একটি "Single Source of Truth" হিসেবে কাজ
+করে। এর ফলে অ্যাপ্লিকেশন কোড এবং কনফিগারেশন সম্পূর্ণ আলাদা থাকে।
+
+
+-> Config Server হলো Distributed System বা Microservices Architecture-এর এমন একটি centralized service, যার প্রধান দায়িত্ব হলো বিভিন্ন application বা microservice-এর
+externalized configuration একটি centralized location থেকে সরবরাহ এবং manage করা।
+
+সহজভাবে বলা যায়, Config Server application-এর code-এর বাইরে থাকা configuration data centrally store/access/manage করার একটি system।
+
+একটি Microservices Architecture-এ অনেকগুলো service থাকতে পারে:
+Order Service
+Payment Service
+Inventory Service
+Notification Service
+User Service
+
+প্রতিটি service-এর নিজস্ব configuration প্রয়োজন হতে পারে। যেমন:
+
+Order Service
+    ├── Database URL
+    ├── Database username
+    ├── Kafka bootstrap servers
+    ├── Payment Service URL
+    └── Log level
+
+
+Payment Service
+    ├── Database URL
+    ├── Payment provider URL
+    ├── Kafka bootstrap servers
+    └── Log level
+
+
+Inventory Service
+    ├── Database URL
+    ├── Kafka bootstrap servers
+    └── Inventory settings
+
+যদি প্রতিটি service-এর configuration আলাদাভাবে service-এর ভিতরে রাখা হয়, তাহলে configuration management ধীরে ধীরে difficult হয়ে যেতে পারে। Config Server
+এই configuration-গুলোকে application code থেকে externalize করে একটি centralized system-এর মাধ্যমে service-গুলোকে configuration সরবরাহ করে।
+
+একটি conceptual architecture:
+
+                    ┌──────────────────────┐
+                    │    Config Storage    │
+                    │                      │
+                    │ Git / DB / Vault etc.│
+                    └──────────┬───────────┘
+                               │
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │     Config Server    │
+                    │                      │
+                    │ Centralized Config   │
+                    │ Access / Management  │
+                    └──────────┬───────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+       Order Service    Payment Service   Inventory Service
+
+
+এখানে গুরুত্বপূর্ণ বিষয় হলো, Config Server নিজে সব configuration-এর actual storage হতে বাধ্য নয়।
+অনেক architecture-এ Config Server Git repository, database, secret store বা অন্য configuration backend থেকে configuration retrieve করে
+client service-কে দেয়।
+
+
+Q : Configuration বলতে কী বোঝায়?
+Config Server বোঝার আগে configuration কী সেটি পরিষ্কার হওয়া গুরুত্বপূর্ণ। Configuration হলো এমন information যা application-এর behavior বা environment control
+করে কিন্তু সাধারণত application-এর মূল business logic-এর অংশ নয়।
+
+উদাহরণ:
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+PAYMENT_SERVICE_URL=http://payment-service:8000
+LOG_LEVEL=INFO
+MAX_RETRY=3
+
+ধরা যাক Order Service-এর code, payment_service_url = "http://payment-service:8000" এখানে URL hardcoded হয়ে গেছে।
+
+Production environment-এ যদি Payment Service-এর address পরিবর্তন হয়, তাহলে code পরিবর্তনের প্রয়োজন হতে পারে। এর পরিবর্তে:
+        payment_service_url = config["PAYMENT_SERVICE_URL"]
+
+এভাবে configuration externalized করা যায়। তখন:
+
+    Application Code
+           |
+           | reads
+           v
+    Configuration
+
+এবং configuration application code-এর বাইরে থাকে।
+
+
+3. Hardcoded Configuration-এর সমস্যা
+
+ধরা যাক তিনটি environment রয়েছে:
+- Development
+- Staging
+- Production
+
+এখন Payment Service-এর address:
+- Development: http://localhost:8001
+- Staging: http://staging-payment:8000
+- Production: http://payment-service:8000
+
+যদি এগুলো code-এর মধ্যে hardcode করা হয়:
+if environment == "development":
+    url = "http://localhost:8001"
+elif environment == "staging":
+    url = "http://staging-payment:8000"
+else:
+    url = "http://payment-service:8000"
+
+তাহলে configuration এবং application logic একসঙ্গে মিশে যায়। এটি maintain করা কঠিন।
+
+Externalized configuration ব্যবহার করলে:
+
+    Application Code
+            |
+            | independent
+            |
+    Configuration
+
+ফলে একই application code বিভিন্ন environment-এ ভিন্ন configuration ব্যবহার করতে পারে।
+

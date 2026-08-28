@@ -1,0 +1,87 @@
+-> Microservices Architecture-এ একটি User Request সাধারণত একাধিক Service-এর মধ্য দিয়ে যায়। যেমন: User একটি Product Order করলে সেটি API Gateway থেকে Order
+Service, তারপর Payment Service এবং Inventory Service-এ যেতে পারে।
+
+প্রতিটি Service তার নিজস্ব Container-এ চলে এবং আলাদা Log File বা Standard Output-এ Log তৈরি করে। যখন এই Log-গুলো Centralized Storage-এ (যেমন: Elasticsearch)
+এসে জমা হয়, তখন হাজার হাজার আলাদা Request-এর Log একসাথে মিশে যায়।
+
+এই বিশাল ডেটার সমুদ্রে কোনো নির্দিষ্ট Request-এর সম্পূর্ণ যাত্রাপথ কীভাবে আলাদা করা যাবে? এখানেই Correlation ID বা Trace ID ব্যবহার করা হয়। এটি একটি Unique Identifier (যেমন: UUID)
+যা একটি Request-এর জন্মলগ্ন থেকে শুরু করে সম্পূর্ণ Execution শেষ হওয়া পর্যন্ত পুরো System-এ ভ্রমণ করে। Centralized Logging System এই ID ব্যবহার করে একটি Request-এর সমস্ত ছড়িয়ে
+থাকা Log-কে একত্রিত করে।
+
+
+-> Step-by-Step Workflow
+Step-1: Generation (API Gateway Level)
+যখন একটি User Request সবার প্রথম System-এ প্রবেশ করে (সাধারণত API Gateway বা Load Balancer-এ), তখন System সেখানে একটি নতুন Unique Correlation ID তৈরি করে। যদি User
+নিজে কোনো Correlation ID হেডারে পাঠায়, তবে সেটি গ্রহণ করা হয়।
+
+Step-2: Propagation (Service-to-Service Communication)
+API Gateway এই Correlation ID-টি HTTP Header (সাধারণত X-Correlation-ID বা traceparent) হিসেবে প্রথম Microservice-এ পাঠায়।
+প্রথম Service সেটি Receive করে। যখন প্রথম Service দ্বিতীয় কোনো Service-কে Call করে, তখন সে নিজের থেকে নতুন Correlation ID তৈরি করে না; বরং আগে থেকে প্রাপ্ত Correlation
+ID-টি দ্বিতীয় Service-এর Request Header-এ যুক্ত করে পাঠায়। এভাবে এটি পুরো System-এ ছড়িয়ে পড়ে।
+
+Step-3: Log Context Attachment (Application Level)
+প্রতিটি Microservice তার Application Code-এ এই Correlation ID-টি গ্রহণ করে এবং contextvars (Python-এ) বা Thread-local Storage-এ সেভ করে। এরপর যখনই সেই Service
+কোনো Log Generate করে (যেমন: logger.info("Order received")), তখন Custom Logger Automatic ভাবে সেই Log-এর JSON Data-এর ভেতর correlation_id Field হিসেবে এই
+ID-টি যুক্ত করে দেয়।
+
+Step-4: Collection and Shipping (Shipper Level)
+Log Shipper (যেমন: Filebeat) Container বা Server থেকে এই JSON Log-গুলো Read করে এবং Central Aggregator-এ পাঠায়। যেহেতু Correlation ID ইতিমধ্যে JSON-এর ভেতর
+একটি Field হিসেবে রয়েছে, তাই Shipper-এর আর কোনো অতিরিক্ত কাজ করতে হয় না।
+
+Step-5: Indexing and Storage (Database Level)
+Logstash বা Fluentd এই Log-গুলো Process করে Elasticsearch-এ পাঠায়। Elasticsearch এই JSON Data-কে Parse করে এবং correlation_id Field-এর উপর একটি Inverted
+Index তৈরি করে। Inverted Index-এর কারণে Elasticsearch তার বিলিয়ন বিলিয়ন Log-এর ভেতর থেকে একটি নির্দিষ্ট ID-র সাথে মিলে যায় এমন সব Log মাত্র কয়েক মিলিসেকেন্ডের মধ্যে খুঁজে বের
+করতে পারে।
+
+Step-6: Visualization and Querying (UI Level)
+Kibana বা Grafana-এর Dashboard-এ যখন কোনো Error খুঁজতে যায়, তখন সরাসরি Search Bar-এ এই Query লেখে:
+    correlation_id: "a1b2c3d4-e5f6-7890-abcd-1234567890ab"
+
+এরপর Centralized System সেই নির্দিষ্ট Request-এর সাথে সম্পর্কিত সমস্ত Service-এর সমস্ত Log Chronological order-এ সাজিয়ে একসাথে দেখায়।
+
+
+-> ধরা যাক, একটি User ই-কমার্স সাইটে অর্ডার করার Request পাঠিয়েছে। তার Request-টি তিনটি Service-এ গিয়েছে:
+- order_service
+- payment_service
+- inventory_service
+
+Request-টি যখন Entry Point-এ আসে, তখন একটি Correlation ID তৈরি হলো: ID-9988
+
+এখন Centralized Logging System-এ নিচের মতো Log জমা হবে:
+
+1. Log Line 1 (From order_service):
+{
+  "timestamp": "2023-10-27T10:00:01Z",
+  "service_name": "order_service",
+  "correlation_id": "ID-9988",
+  "message": "Order creation started for user 105"
+}
+
+2. Log Line 2 (From payment_service):
+{
+  "timestamp": "2023-10-27T10:00:02Z",
+  "service_name": "payment_service",
+  "correlation_id": "ID-9988",
+  "message": "Payment gateway contacted"
+}
+
+3. Log Line 3 (From inventory_service):
+{
+  "timestamp": "2023-10-27T10:00:03Z",
+  "service_name": "inventory_service",
+  "correlation_id": "ID-9988",
+  "message": "Inventory reduced for product 505"
+}
+
+4. Log Line 4 (From order_service):
+{
+  "timestamp": "2023-10-27T10:00:04Z",
+  "service_name": "order_service",
+  "correlation_id": "ID-9988",
+  "message": "Order successfully completed"
+}
+
+Centralized Dashboard-এ যদি ID-9988 দিয়ে Search করা হয়, তবে উপরের চারটি Log Line একত্রিত হয়ে দেখাবে। এখানে চারটি ভিন্ন ভিন্ন Service থেকে
+এই Log-গুলো এসেছে, কিন্তু correlation_id: "ID-9988" Field-এর কারণে Centralized System বুঝতে পেরেছে যে এই চারটি ঘটনা আসলে একটি মাত্র
+User Request-এর অংশ।
+

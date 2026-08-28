@@ -1,0 +1,244 @@
+Authentication এবং Authorization security system-এর দুটি মৌলিক কিন্তু আলাদা concept। দুটির উদ্দেশ্য একে অপরের সঙ্গে সম্পর্কিত হলেও তারা
+একই কাজ করে না। সহজভাবে বলা যায়:
+
+    - Authentication নির্ধারণ করে: “এই ব্যক্তি/ব্যবহারকারী কে?”
+    - Authorization নির্ধারণ করে: “এই authenticated ব্যবহারকারী কী করতে পারবে?”
+
+অর্থাৎ Authentication মূলত identity verification, আর Authorization মূলত access control।
+
+Q : Authentication কী?
+-> Authentication হলো কোনো user বা entity যে identity দাবি করছে, সেটি সত্যিই তার কিনা তা যাচাই করার প্রক্রিয়া।
+
+এর মূল প্রশ্ন: “Who are you?” — এই user কে?
+
+উদাহরণ হিসেবে কোনো user যদি একটি website-এ login করতে চায়, তাহলে system সাধারণত কোনো credential বা authentication factor যাচাই করে। যেমন:
+
+- Username + Password
+- One-Time Password (OTP)
+- Passkey
+- Security Key
+- Biometric authentication
+- Certificate
+- অন্য কোনো authentication factor
+
+ধরা যাক, একজন user login করার সময় username এবং password প্রদান করল। Server সেই credentials যাচাই করে দেখল যে username ও password সঠিক এবং এগুলো একটি
+নির্দিষ্ট user account-এর সঙ্গে মিলে যাচ্ছে। এর মাধ্যমে system নিশ্চিত হলো যে login request-টি ওই নির্দিষ্ট user account-এর পরিচয়ের সঙ্গে সম্পর্কিত। এটাই Authentication।
+
+-> Authentication-এর উদ্দেশ্য হলো একটি identity establish বা verify করা। অর্থাৎ system জানতে চায়, এই request কোন authenticated identity-এর পক্ষ থেকে এসেছে?
+
+Authentication সফল হওয়ার পর system সাধারণত কোনো authenticated session বা authentication credential ব্যবহার করে পরবর্তী request-গুলোতে user-এর identity
+চিনতে পারে।
+
+উদাহরণস্বরূপ:
+- User username/password দিয়ে login করল।
+- Server credential যাচাই করল।
+- Credential সঠিক হলে login সফল হলো।
+- Server user-এর জন্য session তৈরি করতে পারে অথবা token issue করতে পারে।
+- পরবর্তী request-এ সেই session বা token ব্যবহার করে user-এর identity করা যায়।
+
+এখানে গুরুত্বপূর্ণ বিষয় হলো, Authentication নিজে user কী কী করতে পারবে তা নির্ধারণ করে না।
+
+
+Q : Authorization কী?
+-> Authorization হলো কোনো authenticated identity/user-এর নির্দিষ্ট একটি resource বা operation-এর উপর কী ধরনের access বা permission থাকবে তা নির্ধারণ করার প্রক্রিয়া।
+
+এর মূল প্রশ্ন “What is this user allowed to do?” — এই user কী করতে পারবে?
+
+Authentication-এর মাধ্যমে system প্রথমে user-এর identity জানতে পারে। এরপর Authorization-এর মাধ্যমে system সিদ্ধান্ত নেয় সেই identity/user-কে কোনো নির্দিষ্ট operation
+execute করার অনুমতি দেওয়া হবে কি না।
+
+উদাহরণ একটি HR Management System-এ তিন ধরনের user থাকতে পারে:
+- Employee
+- Manager
+- Admin
+
+ধরা যাক, একজন employee সফলভাবে login করেছে।nAuthentication-এর মাধ্যমে system নিশ্চিত করল, এই request একজন নির্দিষ্ট Employee-এর।
+
+কিন্তু এরপর যদি সেই user /admin/users endpoint access করতে চায়, তখন শুধু authenticated হওয়াই যথেষ্ট নয়। System যাচাই করবে:
+- এই authenticated user-এর কি admin user-management access করার permission আছে?
+- যদি permission না থাকে, request প্রত্যাখ্যান করা হবে।
+
+এই permission check-টাই Authorization।
+
+
+-> Authentication vs Authorization
++----------------------+------------------------------------------+------------------------------------------------------+
+| বিষয়                | Authentication                            | Authorization                                         |
++----------------------+------------------------------------------+------------------------------------------------------+
+| মূল প্রশ্ন              | User কে?                                  | User কী করতে পারবে?                                     |
++----------------------+------------------------------------------+------------------------------------------------------+
+| মূল উদ্দেশ্য            | User Identity verify করা                  | Access/permission নির্ধারণ করা                           |
++----------------------+------------------------------------------+------------------------------------------------------+
+| Focus               | Identity                                 | Permission / Access                                   |
++----------------------+------------------------------------------+------------------------------------------------------+
+| কখন প্রয়োজন হয়        | User-এর identity establish করার সময়      | কোনো resource বা action access করার সময়                |
++----------------------+------------------------------------------+------------------------------------------------------+
+| উদাহরণ               | Username + Password যাচাই                 | User-এর `delete_user` permission আছে কিনা যাচাই         |
++----------------------+------------------------------------------+------------------------------------------------------+
+| Result              | User authenticated                       | Access allowed বা denied                               |
++----------------------+------------------------------------------+------------------------------------------------------+
+| সাধারণ mechanism     | Password, OTP, Passkey, Biometric ইত্যাদি   | RBAC, ABAC, Permission, Policy ইত্যাদি                   |
++----------------------+------------------------------------------+------------------------------------------------------+
+
+
+-> Authorization বাস্তব system-এ বিভিন্নভাবে implement করা যায়।
+
+1. RBAC — Role-Based Access Control
+RBAC-এ user-এর role-এর ভিত্তিতে permission নির্ধারণ করা হয়।
+
+উদাহরণ:
+
+Admin Role
+ ├── Create User
+ ├── Update User
+ ├── Delete User
+ └── View User
+
+Manager Role
+ ├── View User
+ └── Update Employee Data
+
+Employee Role
+ └── View Own Data
+
+এখানে user-এর role অনুযায়ী permission নির্ধারিত হচ্ছে।
+
+
+2. Permission-Based Access Control
+-> এখানে সরাসরি নির্দিষ্ট permission-এর ভিত্তিতে access decision নেওয়া হয়।
+
+ধরা যাক, একটি HR Management System রয়েছে। এখানে প্রতিটি user-এর জন্য নির্দিষ্ট permission দেওয়া হয়। User-এর role কী, সেটি সরাসরি বিবেচনা না করে কোন permission
+আছে বা নেই, তার ভিত্তিতে access decision নেওয়া হয়। উদাহরণ হিসেবে permissions হতে পারে:
+
+- employee.view
+- employee.create
+- employee.update
+- employee.delete
+- salary.view
+- salary.update
+
+ধরা যাক, একজন user-এর কাছে permission রয়েছে : employee.view, employee.update, salary.view
+
+- এখন user যদি employee-এর information দেখতে চায়:
+
+Required Permission:
+employee.view
+
+User Permission:
+employee.view
+
+Result:
+Access Allowed
+
+কারণ user-এর কাছে প্রয়োজনীয় employee.view permission রয়েছে।
+
+- আবার user যদি কোনো employee delete করতে চায়:
+
+Required Permission:
+employee.delete
+
+User Permission:
+employee.delete নেই
+
+Result:
+Access Denied
+
+অর্থাৎ user authenticated হলেও employee.delete permission না থাকায় employee delete করার request অনুমোদিত হবে না।
+
+- একইভাবে user যদি salary update করতে চায়:
+
+Required Permission:
+salary.update
+
+User Permission:
+salary.update নেই
+
+Result:
+Access Denied
+
+
+Permission-Based Access Control-এ access decision মূলত নির্দিষ্ট permission-এর উপস্থিতির ওপর নির্ভর করে।
+
+    User
+     ↓
+    Required Permission
+     ↓
+    Permission আছে?
+     ├── Yes → Access Allowed
+     └── No  → Access Denied
+
+অর্থাৎ, User-এর কাছে প্রয়োজনীয় permission থাকলে action করা যাবে, permission না থাকলে action করা যাবে না।
+
+
+3. ABAC — Attribute-Based Access Control
+ABAC-এ শুধু user-এর role নয়, বিভিন্ন attribute এবং policy বিবেচনা করে access decision নেওয়া হয়।
+
+যেমন policy হতে পারে, একজন employee শুধু নিজের department-এর resource access করতে পারবে।(Like Config and Outline Based)
+
+এক্ষেত্রে system বিবেচনা করতে পারে:
+- User-এর department
+- Resource-এর department
+- Requested action
+- অন্যান্য relevant attributes
+- Security policy
+
+এর ফলে authorization decision আরও granular হতে পারে।
+
+ধরা যাক, একটি Company HR Management System রয়েছে। এখানে কোনো user কোনো employee-এর salary information দেখতে পারবে কিনা, সেটি শুধু user-এর role দেখে
+নির্ধারণ করা হবে না। বরং user এবং resource-এর বিভিন্ন attribute এবং নির্দিষ্ট policy বিবেচনা করা হবে। ধরা যাক:
+
+Note : Resource বলতে system-এর এমন কোনো data, object, file, record, endpoint, service বা functionality বোঝায়, যেটিতে কোনো user access করতে বা কোনো action perform করতে চায়।
+এখানে Resource হতে পারে:
+- Employee profile
+- Employee salary information
+- Attendance record
+- Leave record
+- Company document
+- Department information
+- Database record
+- API endpoint
+
+User Attributes:
+- Department = Finance
+- Role = Manager
+- Location = Dhaka
+
+Resource Attributes:
+- Department = Finance
+- Type = Salary Information
+
+Requested Action:
+- View
+
+Policy:
+- Manager শুধুমাত্র নিজের department-এর salary information দেখতে পারবে।
+
+এখন user যখন Finance department-এর salary information দেখতে চায়, system বিভিন্ন attribute এবং policy check করবে:
+
+User Department     = Finance
+Resource Department = Finance
+User Role            = Manager
+Requested Action     = View
+
+Policy:
+Manager নিজের department-এর salary information দেখতে পারবে।
+
+Result:
+Access Allowed
+
+কারণ user এবং resource একই department-এর এবং user-এর role ও requested action policy-এর সঙ্গে মিলে যাচ্ছে।
+
+
+এখন যদি একই user Engineering department-এর salary information দেখতে চায়:
+User Department     = Finance
+Resource Department = Engineering
+User Role            = Manager
+Requested Action     = View
+
+Policy:
+Manager শুধুমাত্র নিজের department-এর salary information দেখতে পারবে।
+
+Result:
+Access Denied
+
+এখানে user-এর Manager role থাকা সত্ত্বেও access দেওয়া হয়নি। কারণ User-এর Department এবং Resource-এর Department এক নয়।

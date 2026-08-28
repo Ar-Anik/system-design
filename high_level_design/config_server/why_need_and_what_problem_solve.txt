@@ -1,0 +1,199 @@
+Config Server মূলত Microservices Architecture-এ configuration management-এর বিভিন্ন problem solve করতে help করে।
+
+1. Scattered Configuration
+একটি Distributed System-এ অনেকগুলো Microservice থাকতে পারে এবং প্রতিটি service-এর আলাদা configuration file থাকতে পারে।
+
+উদাহরণ:
+- order-service/
+    application.yml
+
+- payment-service/
+    application.yml
+
+- inventory-service/
+    application.yml
+
+- notification-service/
+    application.yml
+
+এখানে configuration বিভিন্ন service-এর codebase-এর মধ্যে ছড়িয়ে থাকে। যদি অনেকগুলো service-এর configuration manually manage করতে হয়, তাহলে:
+- configuration update করা কঠিন হতে পারে
+- একই configuration বিভিন্ন জায়গায় inconsistent হয়ে যেতে পারে
+- ভুল configuration deploy হওয়ার possibility বাড়ে
+- কোন service-এ কোন configuration আছে তা track করা কঠিন হতে পারে
+
+Config Server configuration-কে application code থেকে externalize করে এবং centralized configuration management-এর মাধ্যমে বিভিন্ন service-কে
+তাদের প্রয়োজনীয় configuration provide করতে পারে।
+
+                    Config Server
+                         |
+          ┌──────────────┼──────────────┐
+          │              │              │
+          ▼              ▼              ▼
+    Order Config   Payment Config  Inventory Config
+          │              │              │
+          ▼              ▼              ▼
+    Order Service  Payment Service  Inventory Service
+
+
+2. Configuration Update এবং Application Restart
+অনেক application-এ configuration, application startup-এর সময় load হয়। যেমন:
+
+    Application starts
+           ↓
+    Configuration loaded
+           ↓
+    Application runs
+
+এখন configuration পরিবর্তন হলে application সেই নতুন value কখন এবং কীভাবে গ্রহণ করবে, সেটি application framework এবং configuration mechanism-এর উপর নির্ভর করে।
+কিছু ক্ষেত্রে:
+
+    Configuration changed
+           ↓
+    Application restart
+           ↓
+    New configuration loaded
+
+এতে production environment-এ unnecessary restart হতে পারে। কিছু Config Server ecosystem-এ refresh mechanism ব্যবহার করে
+supported configuration runtime-এ update করা সম্ভব:
+
+    Configuration changed
+           ↓
+    Refresh triggered
+           ↓
+    Application reloads configuration
+
+তবে গুরুত্বপূর্ণ বিষয়, Config Server থাকলেই সব configuration restart ছাড়া automatically update হবে—এমন guarantee নেই।
+Configuration refresh support এবং কোন configuration runtime-এ safely refresh করা যায়, তা framework এবং implementation-এর উপর নির্ভর করে।
+
+
+3. Hardcoded Configuration এবং Security Risk
+Sensitive information application code-এর মধ্যে hardcode করা একটি security risk। উদাহরণ:
+
+DATABASE_PASSWORD = "my-password"
+API_KEY = "secret-key"
+
+Code repository-তে এই ধরনের information চলে গেলে security problem তৈরি হতে পারে। বিশেষ করে:
+
+    Source Code
+         ↓
+    Git Repository
+         ↓
+    Developer / CI/CD / Build System
+
+অনেক জায়গায় এই sensitive information expose হওয়ার possibility তৈরি হয়। Configuration externalize করলে application code-এর মধ্যে এই ধরনের
+value সরাসরি hardcode না করার সুযোগ পাওয়া যায়।
+
+তবে এখানে একটি গুরুত্বপূর্ণ correction, Config Server নিজে Secret Manager-এর replacement নয়।
+
+Sensitive secret-এর জন্য সাধারণত dedicated Secret Management system বেশি appropriate:
+- HashiCorp Vault
+- AWS Secrets Manager
+- Azure Key Vault
+- Google Secret Manager
+
+তাই:
+
+    Normal Configuration
+            ↓
+    Config Server
+
+
+    Sensitive Secrets
+            ↓
+    Secret Manager
+
+এই separation production architecture-এ বেশি appropriate।
+
+
+4. Environment-specific Configuration
+একই application বিভিন্ন environment-এ run করতে পারে:
+- Development
+- Staging
+- Production
+
+কিন্তু প্রতিটি environment-এর configuration আলাদা হতে পারে। উদাহরণ:
+
+- Development
+DATABASE_HOST=localhost
+
+- Staging
+DATABASE_HOST=staging-db
+
+- Production
+DATABASE_HOST=production-db
+
+যদি প্রতিটি service-এর configuration manually manage করা হয়, তাহলে environment অনুযায়ী configuration maintain করা কঠিন হতে পারে।
+Config Server service এবং environment অনুযায়ী configuration provide করতে পারে।
+
+Conceptually:
+
+                    Config Server
+                         |
+             ┌───────────┴───────────┐
+             │                       │
+             ▼                       ▼
+      Development Config      Production Config
+             │                       │
+             ▼                       ▼
+      Development App         Production App
+
+ফলে একই application code বিভিন্ন environment-এর appropriate configuration ব্যবহার করতে পারে।
+
+
+5. Configuration Consistency
+একটি Microservices system-এ একই ধরনের configuration একাধিক service-এ থাকতে পারে। উদাহরণ:
+
+- Order Service
+    LOG_LEVEL=INFO
+
+- Payment Service
+    LOG_LEVEL=INFO
+
+- Inventory Service
+    LOG_LEVEL=INFO
+
+এখন logging policy পরিবর্তন করতে হলে অনেক জায়গায় change করতে হতে পারে। Centralized configuration management ব্যবহার করলে এই ধরনের
+configuration centrally manage করা সহজ হয়। এর ফলে configuration consistency maintain করা সহজ হয়।
+
+
+6. Configuration Versioning এবং Rollback
+Config Server-এর backend হিসেবে Git ব্যবহার করা হলে configuration-এর version history পাওয়া যায়। উদাহরণ:
+
+- Version 1
+DATABASE_HOST=db-01
+
+- Version 2
+DATABASE_HOST=db-02
+
+- Version 3
+DATABASE_HOST=db-03
+
+কোন change কখন করা হয়েছে এবং কোন version-এ কী configuration ছিল তা Git-এর মাধ্যমে track করা যায়। কোনো ভুল configuration deploy হলে
+আগের version-এ rollback করাও সহজ হতে পারে। এখানে মনে রাখতে হবে:
+    Versioning Config Server-এর inherent feature নয়; Git-এর মতো version-control backend ব্যবহার করলে এই সুবিধা পাওয়া যায়।
+
+
+7. Configuration Management-এর Complexity কমানো
+Service-এর সংখ্যা যখন 5 services থেকে 50 services বা 100+ services হয়ে যায়, তখন configuration management-এর complexity উল্লেখযোগ্যভাবে বাড়ে।
+
+প্রতিটি service-এর:
+- Database configuration
+- Kafka configuration
+- Timeout configuration
+- Logging configuration
+- Feature configuration
+- External service configuration
+
+আলাদাভাবে manage করা কঠিন হতে পারে।
+
+Config Server configuration management-এর জন্য একটি common management layer প্রদান করে।
+
+             Config Server
+                   |
+      ┌────────────┼────────────┐
+      ▼            ▼            ▼
+    Order       Payment      Inventory
+      |            |            |
+      ▼            ▼            ▼
+   Config        Config       Config

@@ -1,0 +1,48 @@
+1. Message Broker ছাড়া Architecture-এর Problem
+সাধারণ Architecture-এ প্রতিটি Server থেকে Log Shipper (যেমন: Filebeat) সরাসরি Log Aggregator (যেমন: Logstash) বা Storage Engine (যেমন: Elasticsearch)-এ Data
+পাঠায়। স্বাভাবিক সময়ে এটি ঠিকভাবে কাজ করে। কিন্তু যদি Application Code-এ কোনো Error-এর কারণে বা হঠাৎ প্রচুর Traffic আসার ফলে স্বাভাবিকের চেয়ে কয়েক হাজার গুণ বেশি Log Generate
+হয়, তখন Log Aggregator বা Storage Engine একসাথে এত Data Process করতে পারে না। ফলে Server-এর Resource (CPU, RAM) শেষ হয়ে যায় এবং System Crash করে। এই অবস্থাকে
+বলা হয় Bottleneck।
+
+
+2. Message Broker কীভাবে Overload ঠেকায়? (Core Mechanism)
+Message Broker (যেমন: Apache Kafka বা RabbitMQ) এই সমস্যা সমাধানের জন্য Log Shipper এবং Log Aggregator-এর মাঝে একটি Buffer (Shock Absorber) হিসেবে কাজ করে। এর
+কাজ করার পদ্ধতি মূলত ৩ টি ধাপে বিভক্ত:
+
+- Decoupling (আলাদা করা):
+Message Broker যুক্ত করলে Log Shipper এবং Aggregator-এর মধ্যে সরাসরি কোনো communication থাকে না। Shipper-এর কাজ শুধু Broker-এ Data পাঠানো, এবং Aggregator-এর কাজ
+Broker থেকে Data নেওয়া।
+
+- Disk-Based Buffering (সাময়িক সংরক্ষণ):
+যখন প্রচুর Data আসে, Message Broker সেগুলো সরাসরি Aggregator-এর কাছে না পাঠিয়ে নিজের Disk বা Memory-তে Store করে রাখে। Kafka-এর মতো Broker অত্যন্ত দ্রুতগতিতে Disk-এ
+write করতে পারে (প্রতি সেকেন্ডে লক্ষাধিক Message), তাই Shipper-এর কোনো Delay হয় না।
+
+- Consumer Pull Mechanism (Backpressure Control):
+Log Aggregator তার নিজের Processing ক্ষমতা অনুযায়ী Message Broker থেকে Data "Pull" (টেনে নেওয়া) করে। যদি Aggregator প্রতি সেকেন্ডে ১০০০ Data Process করতে পারে, তবে
+সে Broker থেকে ঠিক ১০০০ Data-ই নেবে, যদিও Broker-এর কাছে ১ লক্ষ Data জমা থাকতে পারে। বাকি ৯৯,০০০ Data Broker-এর Buffer-এ নিরাপদ থাকবে। ফলে Aggregator কখনোই
+Overload হবে না।
+
+
+3. Apache Kafka-এর ক্ষেত্রে Buffering কীভাবে কাজ করে?
+Kafka কীভাবে এই Buffer Manage করে, তার একটি internal Structure রয়েছে:
+
+- Producer (Log Shipper): Application থেকে Data Collect করে Kafka-তে পাঠায়।
+
+- Topic এবং Partition: Kafka-তে Data একটি নির্দিষ্ট Topic-এ জমা হয়। Topic-কে আবার একাধিক Partition-এ ভাগ করা যায়, যা Data-কে Organize করে রাখে।
+
+- Sequential Disk Write: Kafka Memory-এর বদলে সরাসরি Hard Disk বা SSD-তে Sequential-ভাবে Data write করে। Sequential write অত্যন্ত দ্রুত হয়, তাই প্রচুর Load
+আসলেও Kafka Crash করে না।
+
+- Offset Tracking: Log Aggregator কতটুকু Data Process করেছে, তার একটি Marker বা Bookmark রাখে, যাকে Offset বলে।
+
+
+4. Failure বা Crash হলে Buffer কীভাবে কাজ করে?
+- Storage Engine ডাউন হলে: যদি কোনো কারণে Storage Engine বা Log Aggregator Crash করে, তবে Message Broker Data Drop করে না। Data তার Disk-এ Buffer হিসেবে জমা হতে থাকে।
+
+- System পুনরায় Active হলে: Storage Engine আবার ঠিক হওয়ার পর, Log Aggregator ঠিক সেই Offset থেকে আবার Data Process করা শুরু করে, যেখানে সে শেষবার থেমেছিল। ফলে কোনো Data হারিয়ে যায় না।
+
+
+5. Scaling এবং Load Balancing
+যদি Buffer-এ Data অনেক বেশি জমে যায়, তবে Admin চাইলে Log Aggregator-এর সংখ্যা বাড়িয়ে দিতে পারে। একাধিক Aggregator একসাথে Message Broker থেকে Data Pull করতে শুরু করবে, ফলে জমানো Data দ্রুত
+Process হয়ে Storage Engine-এ চলে যাবে।
+
